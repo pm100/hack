@@ -1,0 +1,46 @@
+program = _{ SOI ~ stmt* ~ EOI }
+
+stmt = _{ a_inst | c_inst | l_inst | comment | "\n" }
+
+label = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+dest  = { "AMD" | "MD" | "AM" | "AD" | "A" | "M" | "D" }
+comp  = {
+    "0"
+  | "1"
+  | "-1"
+  | "M+1"
+  | "M-1"
+  | "D+M"
+  | "D-M"
+  | "M-D"
+  | "D&M"
+  | "D|M"
+  | "D+1"
+  | "A+1"
+  | "D-1"
+  | "A-1"
+  | "D+A"
+  | "D-A"
+  | "A-D"
+  | "D&A"
+  | "D|A"
+  | "D"
+  | "A"
+  | "!D"
+  | "!A"
+  | "-D"
+  | "-A"
+  | "M"
+  | "!M"
+  | "-M"
+}
+jump  = { "JGT" | "JEQ" | "JGE" | "JLT" | "JNE" | "JLE" | "JMP" }
+
+a_inst     =  { "@" ~ (hex_num | int | label) }
+c_inst     =  { (dest ~ "=")? ~ comp ~ (";" ~ jump)? }
+l_inst     =  { "(" ~ label ~ ")" }
+comment    = _{ "//" ~ (!"\n" ~ ANY)* }
+int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
+hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
+hex_num    =  { "0X" | "0x" ~ hex+ }
+WHITESPACE = _{ " " | "\t" }
