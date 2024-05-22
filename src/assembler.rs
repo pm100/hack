@@ -12,7 +12,7 @@ pub struct Assembler {
     // variables: HashMap<String, i64>,
     labels: HashMap<String, i64>,
     instructions: Vec<u16>,
-    forward_references: Vec<(String, isize)>,
+    forward_references: HashMap<String, Vec<isize>>,
 }
 
 impl Assembler {
@@ -21,7 +21,7 @@ impl Assembler {
             // variables: HashMap::new(),
             labels: HashMap::new(),
             instructions: Vec::new(),
-            forward_references: Vec::new(),
+            forward_references: HashMap::new(),
         }
     }
     pub fn run(&mut self, source: &str) -> Result<()> {
@@ -62,8 +62,11 @@ impl Assembler {
                     self.instructions
                         .push(*self.labels.get(label).unwrap() as u16);
                 } else {
-                    self.forward_references
-                        .push((label.to_string(), self.instructions.len() as isize));
+                    let mut fref = self
+                        .forward_references
+                        .entry(label.to_string())
+                        .or_insert(Vec::new());
+                    fref.push(self.instructions.len() as isize);
                     self.instructions.push(0);
                 }
             }
@@ -74,12 +77,20 @@ impl Assembler {
 
     fn complete(&mut self) -> Result<()> {
         println!("complete");
-        for (label, index) in self.forward_references.iter() {
+        let mut var_count = 16;
+        for (label, indexes) in self.forward_references.iter() {
             if let Some(addr) = self.labels.get(label) {
-                self.instructions[*index as usize] = *addr as u16;
+                for index in indexes {
+                    self.instructions[*index as usize] = *addr as u16;
+                }
             } else {
                 //return Err(anyhow::anyhow!("undefined label"));
-                println!("undefined label");
+                // assume all undefined lables are variables
+                for index in indexes {
+                    println!("undefined label {}=>{}", &label, var_count);
+                    self.instructions[*index as usize] = var_count as u16;
+                    var_count += 1;
+                }
             }
         }
         for (i, inst) in self.instructions.iter().enumerate() {
@@ -126,6 +137,9 @@ impl Assembler {
     fn parse_l(&mut self, pair: Pair<Rule>) -> Result<()> {
         let this_pair = pair.into_inner().next().unwrap();
         let label = this_pair.as_str();
+        if Self::lookup_symbol(label).is_some() {
+            return Err(anyhow::anyhow!("label reserved "));
+        }
         if self.labels.contains_key(label) {
             return Err(anyhow::anyhow!("label already defined"));
         }
@@ -196,5 +210,36 @@ impl Assembler {
             _ => unreachable!(),
         }
         ret
+    }
+    fn lookup_symbol(symbol: &str) -> Option<u16> {
+        let val = match symbol {
+            "R0" => 0,
+            "R1" => 1,
+            "R2" => 2,
+            "R3" => 3,
+            "R4" => 4,
+            "R5" => 5,
+            "R6" => 6,
+            "R7" => 7,
+            "R8" => 8,
+            "R9" => 9,
+            "R10" => 10,
+            "R11" => 11,
+            "R12" => 12,
+            "R13" => 13,
+            "R14" => 14,
+            "R15" => 15,
+
+            "SCREEN" => 0x4000,
+            "KBD" => 0x6000,
+            "SP" => 0,
+            "LCL" => 1,
+            "ARG" => 2,
+            "THIS" => 3,
+            "THAT" => 4,
+            _ => return None,
+        };
+
+        Some(val)
     }
 }
