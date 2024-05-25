@@ -27,10 +27,10 @@ and_st    =  { "and" }
 or_st     =  { "or" }
 not_st    =  { "not" }
 
-segment    = _{ argument | local | static | constant | this | that | pointer | temp }
+segment    = _{ argument | local | static_seg | constant | this | that | pointer | temp }
 argument   =  { "argument" }
 local      =  { "local" }
-static     =  { "static" }
+static_seg =  { "static" }
 constant   =  { "constant" }
 this       =  { "this" }
 that       =  { "that" }

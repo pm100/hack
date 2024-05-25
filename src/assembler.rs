@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use pest::{iterators::Pair, Parser};
 use std::{
     collections::HashMap,
+    fs,
     io::{self, BufRead, Read},
 };
 #[derive(pest_derive::Parser)]
@@ -24,14 +25,14 @@ impl Assembler {
             forward_references: HashMap::new(),
         }
     }
-    pub fn run(&mut self, source: &str) -> Result<()> {
+    pub fn run(&mut self, source: &str, name: &str, output: &str) -> Result<()> {
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
             match pair.as_rule() {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
                 Rule::l_inst => self.parse_l(pair)?,
-                Rule::EOI => self.complete()?,
+                Rule::EOI => self.complete(output)?,
                 _ => {
                     //unreachable!()
                     println!("{:?}", pair.as_rule());
@@ -75,7 +76,7 @@ impl Assembler {
         Ok(())
     }
 
-    fn complete(&mut self) -> Result<()> {
+    fn complete(&mut self, output_name: &str) -> Result<()> {
         println!("complete");
         let mut var_count = 16;
         for (label, indexes) in self.forward_references.iter() {
@@ -93,9 +94,16 @@ impl Assembler {
                 }
             }
         }
-        for (i, inst) in self.instructions.iter().enumerate() {
-            println!("{:04} {:016b} 0x{:04x}", i, inst, inst);
-        }
+        // for (i, inst) in self.instructions.iter().enumerate() {
+        //     println!("{:04} {:016b} 0x{:04x}", i, inst, inst);
+        // }
+        let code = self
+            .instructions
+            .iter()
+            .map(|x| format!("{:016b}", x))
+            .collect::<Vec<String>>()
+            .join("\n");
+        fs::write(output_name, code).expect("Unable to write file");
         Ok(())
     }
     fn parse_c(&mut self, pair: Pair<Rule>) -> Result<()> {
