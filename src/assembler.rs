@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
 use pest::{iterators::Pair, Parser};
-use std::{
-    collections::HashMap,
-    fs,
-    io::{self, BufRead, Read},
-};
+use std::{collections::HashMap, fs};
+
+use crate::constants;
 #[derive(pest_derive::Parser)]
 #[grammar = "asm.pest"]
 pub struct AsmParser;
@@ -25,7 +23,7 @@ impl Assembler {
             forward_references: HashMap::new(),
         }
     }
-    pub fn run(&mut self, source: &str, name: &str, output: &str) -> Result<()> {
+    pub fn run(&mut self, source: &str, _name: &str, output: &str) -> Result<()> {
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
             match pair.as_rule() {
@@ -63,10 +61,10 @@ impl Assembler {
                     self.instructions
                         .push(*self.labels.get(label).unwrap() as u16);
                 } else {
-                    let mut fref = self
+                    let fref = self
                         .forward_references
                         .entry(label.to_string())
-                        .or_insert(Vec::new());
+                        .or_default();
                     fref.push(self.instructions.len() as isize);
                     self.instructions.push(0);
                 }
@@ -103,6 +101,7 @@ impl Assembler {
             .map(|x| format!("{:016b}", x))
             .collect::<Vec<String>>()
             .join("\n");
+        println!("writing to file {}", output_name);
         fs::write(output_name, code).expect("Unable to write file");
         Ok(())
     }
@@ -119,7 +118,7 @@ impl Assembler {
         // do we have a dest?
         if this_pair.as_rule() == Rule::dest {
             dest = this_pair.as_str().to_string();
-            // println!("dest {:?}", dest);
+            println!("dest {:?}", dest);
             this_pair = pair_iter.next().unwrap();
         }
         // mandatory comp
@@ -221,30 +220,30 @@ impl Assembler {
     }
     fn lookup_symbol(symbol: &str) -> Option<u16> {
         let val = match symbol {
-            "R0" => 0,
-            "R1" => 1,
-            "R2" => 2,
-            "R3" => 3,
-            "R4" => 4,
-            "R5" => 5,
-            "R6" => 6,
-            "R7" => 7,
-            "R8" => 8,
-            "R9" => 9,
-            "R10" => 10,
-            "R11" => 11,
-            "R12" => 12,
-            "R13" => 13,
-            "R14" => 14,
-            "R15" => 15,
+            "R0" => constants::R0,
+            "R1" => constants::R1,
+            "R2" => constants::R2,
+            "R3" => constants::R3,
+            "R4" => constants::R4,
+            "R5" => constants::R5,
+            "R6" => constants::R6,
+            "R7" => constants::R7,
+            "R8" => constants::R8,
+            "R9" => constants::R9,
+            "R10" => constants::R10,
+            "R11" => constants::R11,
+            "R12" => constants::R12,
+            "R13" => constants::R13,
+            "R14" => constants::R14,
+            "R15" => constants::R15,
 
-            "SCREEN" => 0x4000,
-            "KBD" => 0x6000,
-            "SP" => 0,
-            "LCL" => 1,
-            "ARG" => 2,
-            "THIS" => 3,
-            "THAT" => 4,
+            "SCREEN" => constants::SCREEN,
+            "KBD" => constants::KBD,
+            "SP" => constants::SP,
+            "LCL" => constants::LCL,
+            "ARG" => constants::ARG,
+            "THIS" => constants::THIS,
+            "THAT" => constants::THAT,
             _ => return None,
         };
 

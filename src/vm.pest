@@ -1,7 +1,11 @@
 program = _{ SOI ~ statement* ~ EOI }
 
 statement = _{
-    push_st
+    label
+  | function
+  | goto
+  | if_goto
+  | push_st
   | pop_st
   | add_st
   | sub_st
@@ -15,17 +19,22 @@ statement = _{
   | comment
   | NEWLINE
 }
-push_st   =  { "push" ~ segment ~ index }
-pop_st    =  { "pop" ~ segment ~ index }
-add_st    =  { "add" }
-sub_st    =  { "sub" }
-neg_st    =  { "neg" }
-eq_st     =  { "eq" }
-gt_st     =  { "gt" }
-lt_st     =  { "lt" }
-and_st    =  { "and" }
-or_st     =  { "or" }
-not_st    =  { "not" }
+
+label    = { "(" ~ label_name ~ ")" }
+function = { "function" ~ identifier ~ parameter_list }
+goto     = { "goto" ~ label_name }
+if_goto  = { "if-goto" ~ label_name }
+push_st  = { "push" ~ segment ~ index }
+pop_st   = { "pop" ~ segment ~ index }
+add_st   = { "add" }
+sub_st   = { "sub" }
+neg_st   = { "neg" }
+eq_st    = { "eq" }
+gt_st    = { "gt" }
+lt_st    = { "lt" }
+and_st   = { "and" }
+or_st    = { "or" }
+not_st   = { "not" }
 
 segment    = _{ argument | local | static_seg | constant | this | that | pointer | temp }
 argument   =  { "argument" }
@@ -37,8 +46,12 @@ that       =  { "that" }
 pointer    =  { "pointer" }
 temp       =  { "temp" }
 index      = _{ int }
-comment    = _{ "//" ~ (!"\n" ~ ANY)* }
-int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
-hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
-hex_num    =  { "0X" | "0x" ~ hex+ }
-WHITESPACE = _{ " " | "\t" }
+
+label_name     = _{ identifier }
+parameter_list =  { ((identifier) ~ ("," ~ identifier)*)? }
+identifier     =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+comment        = _{ "//" ~ (!"\n" ~ ANY)* }
+int            =  { ("+" | "-")? ~ ASCII_DIGIT+ }
+hex            =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
+hex_num        =  { "0X" | "0x" ~ hex+ }
+WHITESPACE     = _{ " " | "\t" }

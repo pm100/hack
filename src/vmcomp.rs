@@ -46,9 +46,9 @@ impl VMComp {
                 _ => {
                     let code = self.code.join("\n");
                     fs::write(output_name, code).expect("Unable to write file");
-                    for inst in &self.code {
-                        println!("{}", inst);
-                    }
+                    // for inst in &self.code {
+                    //     println!("{}", inst);
+                    // }
                 }
             }
         }
@@ -95,7 +95,7 @@ impl VMComp {
             }
         }
 
-        println!("push {} {}", segment, index);
+        // println!("push {} {}", segment, index);
         Ok(())
     }
     fn pop(&mut self, pair: Pair<Rule>) -> Result<()> {
@@ -120,7 +120,11 @@ impl VMComp {
                 self.pop_to_seg_off(constants::THAT, index);
             }
             Rule::temp => {
-                self.pop_to_seg_off(constants::TEMP, index);
+                // self.pop_to_seg_off(constants::TEMP, index);
+                self.emit_dec_load_sp();
+                self.write("D=M");
+                self.write(&format!("@{}", constants::TEMP + index));
+                self.write("M=D");
             }
             Rule::pointer => {
                 self.emit_dec_load_sp();
@@ -160,7 +164,10 @@ impl VMComp {
         self.write("D=M");
         self.emit_dec_load_sp();
 
-        self.write(&format!("M=M{}D", op));
+        self.write(&format!("M=D{}M", op));
+        if op == "-" {
+            self.write("M=-M");
+        }
         self.write("@SP");
         self.write("M=M+1");
     }
@@ -210,16 +217,17 @@ impl VMComp {
 
         // calculate target address
         self.write(&format!("@{}", seg));
-        self.write("A=M");
+        //self.write("A=M");
         self.write("D=M");
         self.write(&format!("@{}", offset));
-        self.write("D=D+M");
+        self.write("D=D+A");
         // store in R13
         self.write("@R13");
         self.write("M=D");
         // pop to D
         self.write("@SP");
         self.write("M=M-1");
+        self.write("A=M");
         self.write("D=M");
         //store at *R13
         self.write("@R13");

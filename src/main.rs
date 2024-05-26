@@ -11,11 +11,7 @@ mod vmcomp;
 
 use clap::Parser;
 use clap_derive::Parser;
-use std::{
-    fs,
-    io::{self, BufRead, Read},
-    path,
-};
+use std::{fs, path};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -40,7 +36,7 @@ fn main() -> Result<()> {
         "asm" => {
             let output_name = format!("{}.hack", name);
             let mut assembler = Assembler::new();
-            assembler.run(&source, name, &output_name);
+            assembler.run(&source, name, &output_name)?;
         }
         "jack" => {
             let output_name = format!("{}.vm", name);
