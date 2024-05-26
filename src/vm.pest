@@ -3,6 +3,7 @@ program = _{ SOI ~ statement* ~ EOI }
 statement = _{
     label
   | function
+  | call
   | goto
   | if_goto
   | push_st
@@ -21,7 +22,8 @@ statement = _{
 }
 
 label    = { "(" ~ label_name ~ ")" }
-function = { "function" ~ identifier ~ parameter_list }
+function = { "function" ~ identifier ~ int }
+call     = { "call" ~ identifier ~ int }
 goto     = { "goto" ~ label_name }
 if_goto  = { "if-goto" ~ label_name }
 push_st  = { "push" ~ segment ~ index }
@@ -47,11 +49,11 @@ pointer    =  { "pointer" }
 temp       =  { "temp" }
 index      = _{ int }
 
-label_name     = _{ identifier }
-parameter_list =  { ((identifier) ~ ("," ~ identifier)*)? }
-identifier     =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
-comment        = _{ "//" ~ (!"\n" ~ ANY)* }
-int            =  { ("+" | "-")? ~ ASCII_DIGIT+ }
-hex            =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
-hex_num        =  { "0X" | "0x" ~ hex+ }
-WHITESPACE     = _{ " " | "\t" }
+label_name = _{ identifier }
+
+identifier =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+comment    = _{ "//" ~ (!"\n" ~ ANY)* }
+int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
+hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
+hex_num    =  { "0X" | "0x" ~ hex+ }
+WHITESPACE = _{ " " | "\t" }

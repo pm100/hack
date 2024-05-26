@@ -14,21 +14,29 @@ enum PushSource {
     A,
     D,
 }
+enum Comparison {
+    Eq,
+    Lt,
+    Gt,
+}
 pub struct VMComp {
     code: Vec<String>,
     file_name: String,
+    label_count: i32,
 }
 impl VMComp {
     pub fn new() -> Self {
         Self {
             code: Vec::new(),
             file_name: String::new(),
+            label_count: 0,
         }
     }
     pub fn run(&mut self, source: &str, file_name: &str, output_name: &str) -> Result<()> {
         self.file_name = file_name.to_string();
         let pairs = VMParser::parse(Rule::program, source)?;
         for pair in pairs {
+            self.write(&format!("// {}", pair.as_str()));
             match pair.as_rule() {
                 // Rule::EOI => Ok(()),
                 Rule::push_st => self.push(pair)?,
@@ -37,9 +45,9 @@ impl VMComp {
                 Rule::sub_st => self.emit_op("-"),
                 Rule::and_st => self.emit_op("&"),
                 Rule::or_st => self.emit_op("|"),
-                Rule::eq_st => self.emit_op("-"),
-                Rule::lt_st => self.emit_op("-"),
-                Rule::gt_st => self.emit_op("-"),
+                Rule::eq_st => self.emit_cmp(Comparison::Eq),
+                Rule::lt_st => self.emit_cmp(Comparison::Lt),
+                Rule::gt_st => self.emit_cmp(Comparison::Gt),
                 Rule::neg_st => self.emit_neg(),
                 Rule::not_st => self.emit_not(),
 
@@ -146,6 +154,10 @@ impl VMComp {
         println!("pop {} {}", segment, index);
         Ok(())
     }
+    fn make_label(&mut self) -> String {
+        self.label_count += 1;
+        format!("L_{}_{}", self.file_name, self.label_count)
+    }
     fn emit_push_this_that(&mut self, index: u16, this_that: &str) {
         self.write(&format!("@{}", this_that));
         self.write("D=M");
@@ -170,6 +182,72 @@ impl VMComp {
         }
         self.write("@SP");
         self.write("M=M+1");
+    }
+    fn emit_cmp(&mut self, cmp: Comparison) {
+        self.emit_dec_load_sp();
+        self.write("D=M");
+        self.emit_dec_load_sp();
+
+        self.write("D=D-M");
+
+        let if_label = self.make_label();
+        let exit_label = self.make_label();
+        self.write(&format!("@{}", if_label));
+        match cmp {
+            Comparison::Eq => {
+                self.write("D;JNE");
+            }
+            Comparison::Lt => {
+                self.write("D;JLE");
+            }
+            Comparison::Gt => {
+                self.write("D;JGE");
+            }
+        }
+
+        self.write("D=-1");
+        self.write(&format!("@{}", exit_label));
+        self.write("D;JMP");
+
+        self.write(&format!("({})", if_label));
+        self.write("D=0");
+        self.write(&format!("({})", exit_label));
+        // match cmp {
+        //     Comparison::Eq => {
+        //         let if_label = self.make_label();
+        //         let exit_label = self.make_label();
+        //         // if D !=0 {
+        //         //   D=-1
+        //         //}else{
+        //         //  D=0
+        //         //}
+        //         self.write(&format!("@{}", if_label));
+        //         self.write("D;JNE");
+        //         self.write("D=-1");
+        //         self.write(&format!("@{}", exit_label));
+        //         self.write("D;JMP");
+
+        //         self.write(&format!("({})", if_label));
+        //         self.write("D=0");
+        //         self.write(&format!("({})", exit_label));
+        //     }
+        //     Comparison::Lt => {
+        //         let label = self.make_label();
+        //         self.write(&format!("@{}", label));
+        //         self.write("D;JGT");
+        //         self.write("D=0");
+        //         self.write(&format!("({})", label));
+        //     }
+        //     Comparison::Gt => {
+        //         let label = self.make_label();
+        //         self.write(&format!("@{}", label));
+        //         self.write("D;JLT");
+        //         self.write("D=0");
+        //         self.write(&format!("({})", label));
+        //     }
+        // }
+
+        self.emit_push(PushSource::D);
     }
     fn emit_push(&mut self, from: PushSource) {
         match from {
