@@ -56,7 +56,70 @@ impl VMComp {
         self.write("M=D");
         self.file_name = "Sys".to_string();
         self.emit_call("Sys.init".to_string(), "0".to_string())?;
+        self.emit_firmware();
         Ok(())
+    }
+    fn emit_firmware(&mut self) {
+        // common call routine. expects
+        //    A to contain retunr address
+        //    R13 contains arg count
+
+        self.write("(FW__RETURN)");
+        self.write("@LCL");
+        self.write("D=M");
+        self.write("@R13"); // R13 = frame
+        self.write("M=D");
+        self.write("@5");
+        self.write("A=D-A");
+        self.write("D=M");
+        self.write("@R14");
+        self.write("M=D"); // retaddr
+
+        self.emit_dec_load_sp();
+        self.write("D=M");
+        self.write("@ARG");
+        self.write("A=M");
+        self.write("M=D");
+
+        self.write("@ARG");
+        self.write("D=M+1");
+        self.write("@SP");
+        self.write("M=D");
+
+        self.write("@R13");
+        self.write("D=M");
+        self.write("A=D-1");
+        self.write("D=M");
+        self.write("@THAT");
+        self.write("M=D");
+
+        self.write("@2");
+        self.write("D=A");
+        self.write("@R13");
+        self.write("A=M-D");
+        self.write("D=M");
+        self.write("@THIS");
+        self.write("M=D");
+
+        self.write("@3");
+        self.write("D=A");
+        self.write("@R13");
+        self.write("A=M-D");
+        self.write("D=M");
+        self.write("@ARG");
+        self.write("M=D");
+
+        self.write("@4");
+        self.write("D=A");
+        self.write("@R13");
+        self.write("A=M-D");
+        self.write("D=M");
+        self.write("@LCL");
+        self.write("M=D");
+
+        self.write("@R14");
+        self.write("A=M");
+        self.write("0;JMP");
     }
     pub fn run(&mut self, source: &str, file_name: &str) -> Result<()> {
         self.file_name = file_name.to_string();
@@ -247,6 +310,11 @@ impl VMComp {
         Ok(())
     }
     fn return_st(&mut self) -> Result<()> {
+        self.write("@FW__RETURN");
+        self.write("0;JMP");
+        Ok(())
+    }
+    fn return_stx(&mut self) -> Result<()> {
         self.write("@LCL");
         self.write("D=M");
         self.write("@R13"); // R13 = frame
