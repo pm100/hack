@@ -1,0 +1,6 @@
+function Sys.init 0
+	call Test.start 0
+	pop temp 1
+	label LOOP
+	goto LOOP
+    

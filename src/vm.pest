@@ -1,11 +1,13 @@
-program = _{ SOI ~ statement* ~ EOI }
+program = _{ SOI ~ statements ~ EOI }
 
-statement = _{
+statements = _{ ((statement ~ NEWLINE) | (statement ~ comment) | NEWLINE)* }
+statement  = _{
     label
-  | function
-  | call
-  | goto
-  | if_goto
+  | function_st
+  | call_st
+  | return_st
+  | goto_st
+  | if_goto_st
   | push_st
   | pop_st
   | add_st
@@ -18,27 +20,27 @@ statement = _{
   | or_st
   | not_st
   | comment
-  | NEWLINE
 }
 
-label    = { "(" ~ label_name ~ ")" }
-function = { "function" ~ identifier ~ int }
-call     = { "call" ~ identifier ~ int }
-goto     = { "goto" ~ label_name }
-if_goto  = { "if-goto" ~ label_name }
-push_st  = { "push" ~ segment ~ index }
-pop_st   = { "pop" ~ segment ~ index }
-add_st   = { "add" }
-sub_st   = { "sub" }
-neg_st   = { "neg" }
-eq_st    = { "eq" }
-gt_st    = { "gt" }
-lt_st    = { "lt" }
-and_st   = { "and" }
-or_st    = { "or" }
-not_st   = { "not" }
+label       = { "label" ~ label_name }
+function_st = { "function" ~ function_name ~ int }
+call_st     = { "call" ~ function_name ~ int }
+return_st   = { "return" }
+goto_st     = { "goto" ~ label_name }
+if_goto_st  = { "if-goto" ~ label_name }
+push_st     = { "push" ~ (segment | constant) ~ index }
+pop_st      = { "pop" ~ segment ~ index }
+add_st      = { "add" }
+sub_st      = { "sub" }
+neg_st      = { "neg" }
+eq_st       = { "eq" }
+gt_st       = { "gt" }
+lt_st       = { "lt" }
+and_st      = { "and" }
+or_st       = { "or" }
+not_st      = { "not" }
 
-segment    = _{ argument | local | static_seg | constant | this | that | pointer | temp }
+segment    = _{ argument | local | static_seg | this | that | pointer | temp }
 argument   =  { "argument" }
 local      =  { "local" }
 static_seg =  { "static" }
@@ -49,11 +51,11 @@ pointer    =  { "pointer" }
 temp       =  { "temp" }
 index      = _{ int }
 
-label_name = _{ identifier }
-
-identifier =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
-comment    = _{ "//" ~ (!"\n" ~ ANY)* }
-int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
-hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
-hex_num    =  { "0X" | "0x" ~ hex+ }
-WHITESPACE = _{ " " | "\t" }
+label_name    = _{ identifier }
+function_name = @{ identifier ~ "." ~ identifier }
+identifier    =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+comment       = _{ "//" ~ (!"\n" ~ ANY)* }
+int           =  { ("+" | "-")? ~ ASCII_DIGIT+ }
+hex           =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
+hex_num       =  { "0X" | "0x" ~ hex+ }
+WHITESPACE    = _{ " " | "\t" }

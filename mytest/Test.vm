@@ -1,0 +1,11 @@
+function Test.start 0
+//push constant 42
+push constant 1
+//call Test.foo 2
+
+return
+function Test.foo 2
+push argument 0
+push argument 1
+add
+return
