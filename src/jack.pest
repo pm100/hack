@@ -1,26 +1,32 @@
-class           = { "class" ~ class_name ~ "{" ~ class_var* ~ subroutine* ~ "}" }
-class_var       = { ("static" | "field") ~ type ~ identifier ~ ("," ~ identifier)* }
-type            = { "int" | "char" | "boolean" | class_name }
-class_name      = { identifier }
-subroutine      = { ("constructor" | "function" | "method") ~ ("void" | type) ~ subroutine_name ~ "(" ~ parameter_list ~ ")" ~ subroutine_body }
-subroutine_name = { identifier }
-subroutine_body = { "{" ~ var_dec* ~ statements }
+class_file = _{ SOI ~ class ~ EOI }
 
-parameter_list = { ((type ~ var_name) ~ ("," ~ type ~ var_name)*)? }
-identifier     = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
-var_name       = { identifier }
-var_dec        = { "var" ~ type ~ var_name ~ ("," ~ type ~ var_name)* }
+class     = _{ "class" ~ class_name ~ "{" ~ class_var* ~ subroutine* ~ "}" }
+class_var =  { field_type ~ type ~ identifier ~ ("," ~ identifier)* ~ ";" }
 
-statements = { statement* }
-statement  = { let_st | if_st | while_st | do_st | return_st }
-let_st     = { "let" ~ var_name ~ ("[" ~ expression ~ "]")? ~ "=" ~ expression }
-if_st      = { "if" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" ~ ("else" ~ "{" ~ statements ~ "}")? }
-while_st   = { "while" ~ "(" ~ expression ~ ")" ~ "{" ~ expression ~ "}" }
-do_st      = { "do" ~ subroutine_call ~ ";" }
-return_st  = { "return" ~ expression? ~ ";" }
+type            =  { "int" | "char" | "boolean" | class_name }
+class_name      =  { identifier }
+subroutine      =  { subroutine_type ~ ("void" | type) ~ subroutine_name ~ "(" ~ parameter_list ~ ")" ~ subroutine_body }
+subroutine_name = _{ identifier }
+subroutine_body = _{ "{" ~ variables ~ statements ~ "}" }
+subroutine_type =  { ("constructor" | "function" | "method") }
+parameter_list  =  { ((type ~ var_name) ~ ("," ~ type ~ var_name)*)? }
+identifier      =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+var_name        = _{ identifier }
+var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ type ~ var_name)* }
+
+statements  =  { (statement ~ ";")* }
+variables   =  { (var_dec ~ ";")* }
+statement   = _{ let_st | if_st | while_st | do_st | return_st }
+let_st      =  { "let" ~ var_name ~ (array_index)? ~ "=" ~ expression }
+if_st       =  { "if" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" ~ ("else" ~ "{" ~ statements ~ "}")? }
+while_st    =  { "while" ~ "(" ~ expression ~ ")" ~ "{" ~ expression ~ "}" }
+do_st       =  { "do" ~ subroutine_call }
+return_st   =  { "return" ~ expression? }
+field_type  =  { "static" | "field" }
+array_index =  { "[" ~ expression ~ "]" }
 
 expression      =  { term ~ (op ~ term)* }
-term            =  { int | string | keyword | var_name ~ "[" ~ expression ~ "]" | var_name | "(" ~ expression ~ ")" | (unary_op ~ term) | subroutine_call }
+term            = _{ int | string | keyword | var_name ~ (array_index)? | var_name | "(" ~ expression ~ ")" | (unary_op ~ term) | subroutine_call }
 subroutine_call =  { (subroutine_name ~ "(" ~ expression_list ~ ")") | ((class_name | var_name) ~ "." ~ subroutine_name ~ "(" ~ expression_list ~ ")") }
 expression_list =  { (expression ~ ("," ~ expression)*)? }
 op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
