@@ -6,7 +6,7 @@ static boolean b;
         var int poop;
         var boolean bar;
         let poop = 42;
-        let foo=2+(3*x);
+        let poop=2+(3*x);
         do Output.printString("hellow world");
         return;
     }

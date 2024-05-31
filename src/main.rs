@@ -1,11 +1,14 @@
 use assembler::Assembler;
 
+use crate::jack::compiler::Compiler;
 use anyhow::Result;
-use compiler::Compiler;
 use vmcomp::VMComp;
 //use vmcomp::VMComp;
 mod assembler;
-mod compiler;
+mod jack {
+    pub mod compiler;
+    mod symbols;
+}
 mod constants;
 mod vmcomp;
 

@@ -10,7 +10,7 @@ subroutine_name = _{ identifier }
 subroutine_body = _{ "{" ~ variables ~ statements ~ "}" }
 subroutine_type =  { ("constructor" | "function" | "method") }
 parameter_list  =  { ((type ~ var_name) ~ ("," ~ type ~ var_name)*)? }
-identifier      =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 var_name        = _{ identifier }
 var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ type ~ var_name)* }
 
@@ -37,4 +37,4 @@ comment         = _{ "//" ~ (!"\n" ~ ANY)* }
 int             =  { ("+" | "-")? ~ ASCII_DIGIT+ }
 hex             =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
 hex_num         =  { "0X" | "0x" ~ hex+ }
-WHITESPACE      = _{ " " | "\t" | "\n" }
+WHITESPACE      = _{ " " | "\t" | "\n" | "\r" }
