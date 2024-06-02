@@ -51,7 +51,7 @@ pointer    =  { "pointer" }
 temp       =  { "temp" }
 index      = _{ int }
 
-label_name    = _{ identifier }
+label_name    = @{ (ASCII_ALPHA) ~ (ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "$")* }
 function_name = @{ identifier ~ "." ~ identifier }
 identifier    =  { (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 comment       = _{ "//" ~ (!"\n" ~ ANY)* }

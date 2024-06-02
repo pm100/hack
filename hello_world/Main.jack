@@ -1,0 +1,10 @@
+class Main{
+    field char f;
+field int x;
+static boolean b;
+    function void main(){
+
+        do Output.printString("hellow world");
+        return;
+    }
+}

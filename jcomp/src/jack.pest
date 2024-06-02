@@ -27,7 +27,7 @@ array_index =  { "[" ~ expression ~ "]" }
 
 expression      =  { term ~ (op ~ term)* }
 term            = _{ int | string | keyword | var_name ~ (array_index)? | var_name | "(" ~ expression ~ ")" | (unary_op ~ term) | subroutine_call }
-subroutine_call =  { (subroutine_name ~ "(" ~ expression_list ~ ")") | ((class_name | var_name) ~ "." ~ subroutine_name ~ "(" ~ expression_list ~ ")") }
+subroutine_call = _{ (identifier)? ~ "." ~ subroutine_name ~ "(" ~ expression_list ~ ")" }
 expression_list =  { (expression ~ ("," ~ expression)*)? }
 op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
 unary_op        =  { "-" | "+" }

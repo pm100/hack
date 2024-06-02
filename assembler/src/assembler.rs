@@ -2,13 +2,12 @@ use anyhow::{Context, Result};
 use pest::{iterators::Pair, Parser};
 use std::{collections::HashMap, fs};
 
-use crate::constants;
+use crate::{constants, Format};
 #[derive(pest_derive::Parser)]
 #[grammar = "asm.pest"]
 pub struct AsmParser;
 
 pub struct Assembler {
-    // variables: HashMap<String, i64>,
     labels: HashMap<String, i64>,
     instructions: Vec<u16>,
     forward_references: HashMap<String, Vec<isize>>,
@@ -23,40 +22,54 @@ impl Assembler {
             forward_references: HashMap::new(),
         }
     }
-    pub fn run(&mut self, source: &str, _name: &str, output: &str) -> Result<()> {
+    pub fn run(&mut self, source: &str, _name: &str) -> Result<()> {
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
             match pair.as_rule() {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
                 Rule::l_inst => self.parse_l(pair)?,
-                Rule::EOI => self.complete(output)?,
+                Rule::EOI => self.complete()?,
                 _ => {
-                    //unreachable!()
-                    println!("{:?}", pair.as_rule());
+                    unreachable!()
                 }
             }
         }
 
         Ok(())
     }
+
+    pub fn output_code(self, output_name: &str, format: Format) -> Result<()> {
+        let code = self
+            .instructions
+            .iter()
+            .map(|x| match format {
+                Format::RawBinary => format!("{:016b}", *x),
+                Format::RawHex => format!("{:04x}", *x),
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        println!("writing to file {}", output_name);
+        fs::write(output_name, code).expect("Unable to write file");
+        Ok(())
+    }
     fn parse_a(&mut self, pair: Pair<Rule>) -> Result<()> {
         let this_pair = pair.into_inner().next().unwrap();
         match this_pair.as_rule() {
             Rule::int => {
-                // println!("{:?}", this_pair.as_str());
-                let num = i64::from_str_radix(this_pair.as_str(), 10).context("bad num")?;
-                println!("dec {:?}", num);
+                let num = this_pair.as_str().parse::<i64>().context("bad num")?;
                 self.instructions.push(num as u16);
             }
             Rule::hex_num => {
                 let num = i64::from_str_radix(&this_pair.as_str()[2..], 16).context("bad num")?;
-                println!("hex {:?}", num);
                 self.instructions.push(num as u16);
             }
             Rule::label => {
                 let label = this_pair.as_str();
-                println!("label ref{:?}", label);
+                if let Some(reserved_symbol) = Self::lookup_symbol(label) {
+                    self.instructions.push(reserved_symbol);
+                    return Ok(());
+                }
                 if self.labels.contains_key(label) {
                     self.instructions
                         .push(*self.labels.get(label).unwrap() as u16);
@@ -74,8 +87,7 @@ impl Assembler {
         Ok(())
     }
 
-    fn complete(&mut self, output_name: &str) -> Result<()> {
-        println!("complete");
+    fn complete(&mut self) -> Result<()> {
         let mut var_count = 16;
         for (label, indexes) in self.forward_references.iter() {
             if let Some(addr) = self.labels.get(label) {
@@ -83,26 +95,15 @@ impl Assembler {
                     self.instructions[*index as usize] = *addr as u16;
                 }
             } else {
-                //return Err(anyhow::anyhow!("undefined label"));
                 // assume all undefined lables are variables
                 for index in indexes {
-                    println!("undefined label {}=>{}", &label, var_count);
+                    println!("Variable {} => {}", &label, var_count);
                     self.instructions[*index as usize] = var_count as u16;
                     var_count += 1;
                 }
             }
         }
-        // for (i, inst) in self.instructions.iter().enumerate() {
-        //     println!("{:04} {:016b} 0x{:04x}", i, inst, inst);
-        // }
-        let code = self
-            .instructions
-            .iter()
-            .map(|x| format!("{:016b}", x))
-            .collect::<Vec<String>>()
-            .join("\n");
-        println!("writing to file {}", output_name);
-        fs::write(output_name, code).expect("Unable to write file");
+
         Ok(())
     }
     fn parse_c(&mut self, pair: Pair<Rule>) -> Result<()> {
@@ -118,7 +119,6 @@ impl Assembler {
         // do we have a dest?
         if this_pair.as_rule() == Rule::dest {
             dest = this_pair.as_str().to_string();
-            println!("dest {:?}", dest);
             this_pair = pair_iter.next().unwrap();
         }
         // mandatory comp
@@ -131,7 +131,6 @@ impl Assembler {
         } else {
             jump = "";
         }
-        println!("cinst dest: {} comp {} jump {}", dest, comp, jump);
 
         self.instructions.push(
             Self::generate_comp(comp) << 6
@@ -148,11 +147,10 @@ impl Assembler {
             return Err(anyhow::anyhow!("label reserved "));
         }
         if self.labels.contains_key(label) {
-            return Err(anyhow::anyhow!("label already defined"));
+            return Err(anyhow::anyhow!("label {} already defined", label));
         }
         self.labels
             .insert(label.to_string(), self.instructions.len() as i64);
-        println!("label def{:?}", label);
         Ok(())
     }
     fn generate_dest(dest: &str) -> u16 {
@@ -169,54 +167,50 @@ impl Assembler {
         ret
     }
     fn generate_comp(comp: &str) -> u16 {
-        let mut ret = 0;
         match comp {
-            "0" => ret = 0b0101010,
-            "1" => ret = 0b0111111,
-            "-1" => ret = 0b0111010,
-            "D" => ret = 0b0001100,
-            "A" => ret = 0b0110000,
-            "!D" => ret = 0b0001101,
-            "!A" => ret = 0b0110001,
-            "-D" => ret = 0b0001111,
-            "-A" => ret = 0b0110011,
-            "D+1" => ret = 0b0011111,
-            "A+1" => ret = 0b0110111,
-            "D-1" => ret = 0b0001110,
-            "A-1" => ret = 0b0110010,
-            "D+A" => ret = 0b0000010,
-            "D-A" => ret = 0b0010011,
-            "A-D" => ret = 0b0000111,
-            "D&A" => ret = 0b0000000,
-            "D|A" => ret = 0b0010101,
-            "M" => ret = 0b1110000,
-            "!M" => ret = 0b1110001,
-            "-M" => ret = 0b1110011,
-            "M+1" => ret = 0b1110111,
-            "M-1" => ret = 0b1110010,
-            "D+M" => ret = 0b1000010,
-            "D-M" => ret = 0b1010011,
-            "M-D" => ret = 0b1000111,
-            "D&M" => ret = 0b1000000,
-            "D|M" => ret = 0b1010101,
+            "0" => 0b0101010,
+            "1" => 0b0111111,
+            "-1" => 0b0111010,
+            "D" => 0b0001100,
+            "A" => 0b0110000,
+            "!D" => 0b0001101,
+            "!A" => 0b0110001,
+            "-D" => 0b0001111,
+            "-A" => 0b0110011,
+            "D+1" => 0b0011111,
+            "A+1" => 0b0110111,
+            "D-1" => 0b0001110,
+            "A-1" => 0b0110010,
+            "D+A" => 0b0000010,
+            "D-A" => 0b0010011,
+            "A-D" => 0b0000111,
+            "D&A" => 0b0000000,
+            "D|A" => 0b0010101,
+            "M" => 0b1110000,
+            "!M" => 0b1110001,
+            "-M" => 0b1110011,
+            "M+1" => 0b1110111,
+            "M-1" => 0b1110010,
+            "D+M" => 0b1000010,
+            "D-M" => 0b1010011,
+            "M-D" => 0b1000111,
+            "D&M" => 0b1000000,
+            "D|M" => 0b1010101,
             _ => unreachable!(),
         }
-        ret
     }
     fn generate_jump(jump: &str) -> u16 {
-        let mut ret = 0;
         match jump {
-            "JGT" => ret = 0b001,
-            "JEQ" => ret = 0b010,
-            "JGE" => ret = 0b011,
-            "JLT" => ret = 0b100,
-            "JNE" => ret = 0b101,
-            "JLE" => ret = 0b110,
-            "JMP" => ret = 0b111,
-            "" => ret = 0b000,
+            "JGT" => 0b001,
+            "JEQ" => 0b010,
+            "JGE" => 0b011,
+            "JLT" => 0b100,
+            "JNE" => 0b101,
+            "JLE" => 0b110,
+            "JMP" => 0b111,
+            "" => 0b000,
             _ => unreachable!(),
         }
-        ret
     }
     fn lookup_symbol(symbol: &str) -> Option<u16> {
         let val = match symbol {

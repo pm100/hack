@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf};
+
 use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 
@@ -13,23 +15,7 @@ pub struct Compiler {
     subroutine_symbols: SymbolTable,
     code: Vec<String>,
 }
-// enum VarType {
-//     Int,
-//     Bool,
-//     Char,
-//     Instance,
-// }
-// enum VarKind {
-//     Static,
-//     Field,
-//     Local,
-// }
-// struct Symbol {
-//     name: String,
-//     var_type: VarType,
-//     var_kind: VarKind,
-//     number: i32,
-// }
+
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -39,23 +25,30 @@ impl Compiler {
             code: Vec::new(),
         }
     }
-    pub fn run(&mut self, source: &str, _name: &str, _output: &str) -> Result<()> {
-        let mut pairs = JackParser::parse(Rule::class_file, source)?;
+    pub fn output_code(&mut self, output_name: &str) -> Result<()> {
+        self.code.push("\n".to_string());
+        let code = self.code.join("\n");
+        fs::write(output_name, code).expect("Unable to write file");
+        Ok(())
+    }
+
+    pub fn run(&mut self, source: &str, _name: &str) -> Result<()> {
+        let pairs = JackParser::parse(Rule::class_file, source)?;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::class_name => {
                     self.class_name = pair.as_str().to_string();
                 }
                 Rule::class_var => {
-                    self.do_class_var(pair);
+                    self.do_class_var(pair)?;
                 }
                 Rule::subroutine => {
-                    self.do_subroutine(pair);
+                    self.do_subroutine(pair)?;
                 }
                 Rule::EOI => {
-                    for line in self.code.iter() {
-                        println!("{}", line);
-                    }
+                    // for line in self.code.iter() {
+                    //     println!("{}", line);
+                    // }
                 }
                 _ => {}
             }
@@ -87,12 +80,12 @@ impl Compiler {
     fn write(&mut self, line: &str) {
         self.code.push(line.to_string());
     }
-    fn do_subroutine(&mut self, pair: Pair<Rule>) {
+    fn do_subroutine(&mut self, pair: Pair<Rule>) -> Result<()> {
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
-        let kind_str = pair_iter.next().unwrap().as_str();
+        let _kind_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
-        let param_pair = pair_iter.next().unwrap();
+        let _param_pair = pair_iter.next().unwrap();
 
         for pair in pair_iter {
             match pair.as_rule() {
@@ -108,15 +101,16 @@ impl Compiler {
                 }
             }
         }
+        Ok(())
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
-        let mut pair_iter = pair.into_inner();
+        let pair_iter = pair.into_inner();
         for pair in pair_iter {
             match pair.as_rule() {
-                Rule::do_st => {}
+                Rule::do_st => self.do_subcall(pair),
                 Rule::let_st => self.do_let(pair),
                 Rule::while_st => {}
-                Rule::return_st => {}
+                Rule::return_st => self.do_return(pair),
                 Rule::if_st => {}
                 _ => {
                     unreachable!("{:?}", pair.as_rule())
@@ -125,7 +119,7 @@ impl Compiler {
         }
     }
     fn do_variables(&mut self, pair: Pair<Rule>, name: &str) {
-        let mut pair_iter = pair.into_inner();
+        let pair_iter = pair.into_inner();
         let mut local_count = 0;
         for pair in pair_iter {
             self.do_sub_var(pair);
@@ -166,17 +160,7 @@ impl Compiler {
         };
         println!("{:?}", expr.as_rule());
         self.do_expr(expr);
-        // let func_str = pair_iter.next().unwrap().as_str();
-        // let expr_list = pair_iter.next().unwrap();
-        // for pair in pair_iter {
-        //     println!("let {:?}", pair.as_rule());
-        //     match pair.as_rule() {
-        //         Rule::expression => {
-        //             self.do_expr(pair);
-        //         }
-        //         _ => {}
-        //     }
-        // }
+
         let symbol = self.subroutine_symbols.get(name_str);
         match symbol {
             Some(symbol) => match symbol.var_kind {
@@ -209,7 +193,7 @@ impl Compiler {
     }
     fn do_term(&mut self, term: Pair<Rule>) {
         println!("term {:?}", term.as_str());
-        match (term.as_rule()) {
+        match term.as_rule() {
             Rule::int => {
                 self.write(&format!("push constant {}", term.as_str()));
             }
@@ -240,6 +224,15 @@ impl Compiler {
                             _ => unreachable!(),
                         }
                     }
+                }
+            }
+            Rule::string => {
+                let s = term.as_str();
+                self.write(&format!("push constant {}", s.len()));
+                self.write("call String.new 1");
+                for c in s.chars() {
+                    self.write(&format!("push constant {}", c as u32));
+                    self.write("call String.appendChar 2");
                 }
             }
             Rule::expression => {
@@ -280,5 +273,32 @@ impl Compiler {
     fn mul(&mut self) {
         println!("mul");
         self.write("call Math.multiply 2");
+    }
+    fn do_return(&mut self, pair: Pair<Rule>) {
+        let mut pair_iter = pair.into_inner();
+        if let Some(expr) = pair_iter.next() {
+            self.do_expr(expr);
+        } else {
+            self.write("push constant 0");
+        }
+        self.write("return");
+    }
+    fn do_subcall(&mut self, pair: Pair<Rule>) {
+        let mut pair_iter = pair.into_inner();
+        let mut name = pair_iter.next().unwrap().as_str().to_string();
+        // next is either .name or arg list
+        let mut maybe_name_or_args = pair_iter.next().unwrap();
+        if maybe_name_or_args.as_rule() == Rule::identifier {
+            name = format!("{}.{}", name, maybe_name_or_args.as_str());
+            maybe_name_or_args = pair_iter.next().unwrap();
+        } else {
+            name = format!("{}.{}", self.class_name, name);
+        }
+        let mut arg_count = 0;
+        for arg in maybe_name_or_args.into_inner() {
+            arg_count += 1;
+            self.do_expr(arg);
+        }
+        self.write(&format!("call {} {}", name, arg_count));
     }
 }

@@ -1,12 +1,7 @@
 use crate::constants;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use pest::{iterators::Pair, Parser};
-use std::{
-    collections::HashMap,
-    fs,
-    io::{self, BufRead, Read},
-    path::PathBuf,
-};
+use std::fs;
 #[derive(pest_derive::Parser)]
 #[grammar = "vm.pest"]
 pub struct VMParser;
@@ -20,21 +15,12 @@ enum Comparison {
     Lt,
     Gt,
 }
-enum SymbolType {
-    Label,
-    Function,
-    Variable,
-}
-struct Symbol {
-    name: String,
-    address: u16,
-    stype: SymbolType,
-}
+
 pub struct VMComp {
     code: Vec<String>,
     file_name: String,
     label_count: i32,
-    // symbols: HashMap<String, Symbol>,
+    current_function: String,
 }
 impl VMComp {
     pub fn new() -> Self {
@@ -42,9 +28,10 @@ impl VMComp {
             code: Vec::new(),
             file_name: String::new(),
             label_count: 0,
+            current_function: String::new(),
         }
     }
-    pub fn output_code(&self, output_name: &PathBuf) -> Result<()> {
+    pub fn output_code(&self, output_name: &str) -> Result<()> {
         let code = self.code.join("\n");
         fs::write(output_name, code).expect("Unable to write file");
         Ok(())
@@ -56,13 +43,11 @@ impl VMComp {
         self.write("M=D");
         self.file_name = "Sys".to_string();
         self.emit_call("Sys.init".to_string(), "0".to_string())?;
-        self.emit_firmware();
+
         Ok(())
     }
-    fn emit_firmware(&mut self) {
-        // common call routine. expects
-        //    A to contain retunr address
-        //    R13 contains arg count
+    pub fn emit_firmware(&mut self) -> Result<()> {
+        // common return routine
 
         self.write("(FW__RETURN)");
         self.write("@LCL");
@@ -120,13 +105,54 @@ impl VMComp {
         self.write("@R14");
         self.write("A=M");
         self.write("0;JMP");
+
+        // common call routine
+        // entered with
+        // D= return label
+        // R13 = arg count
+        // R14 = sub to call
+
+        self.write("(FW__CALL)");
+        self.emit_push(PushSource::D);
+        self.write("@LCL");
+        self.write("D=M");
+        self.emit_push(PushSource::D);
+        self.write("@ARG");
+        self.write("D=M");
+        self.emit_push(PushSource::D);
+        self.write("@THIS");
+        self.write("D=M");
+        self.emit_push(PushSource::D);
+        self.write("@THAT");
+        self.write("D=M");
+        self.emit_push(PushSource::D);
+        self.write("@SP");
+        self.write("D=M");
+        self.write("@5");
+        self.write("D=D-A");
+
+        self.write("@R13");
+        self.write("D=D-M");
+        self.write("@ARG");
+        self.write("M=D");
+        self.write("@SP");
+        self.write("D=M");
+        self.write("@LCL");
+        self.write("M=D");
+        self.write("@R14");
+        self.write("A=M");
+        self.write("0;JMP");
+
+        Ok(())
     }
     pub fn run(&mut self, source: &str, file_name: &str) -> Result<()> {
         self.file_name = file_name.to_string();
+        self.current_function = String::new();
         let pairs = VMParser::parse(Rule::program, source)?;
         for pair in pairs {
+            // insert original source line as comment
             self.write(&format!("// {}", pair.as_str()));
-            println!("{:?}", pair.as_str());
+
             match pair.as_rule() {
                 Rule::push_st => self.push(pair)?,
                 Rule::pop_st => self.pop(pair)?,
@@ -141,18 +167,18 @@ impl VMComp {
                 Rule::not_st => self.emit_not(),
                 Rule::label => {
                     let label = pair.into_inner().next().unwrap().as_str();
-                    self.write(&format!("({})", label));
+                    self.write(&format!("({})", self.make_private_label(label)));
                 }
                 Rule::goto_st => {
                     let label = pair.into_inner().next().unwrap().as_str();
-                    self.write(&format!("@{}", label));
+                    self.write(&self.make_private_label(label));
                     self.write("0;JMP");
                 }
                 Rule::if_goto_st => {
                     let label = pair.into_inner().next().unwrap().as_str();
                     self.emit_dec_load_sp();
                     self.write("D=M");
-                    self.write(&format!("@{}", label));
+                    self.write(&self.make_private_label(label));
                     self.write("D;JNE");
                 }
                 Rule::function_st => {
@@ -160,6 +186,7 @@ impl VMComp {
                     let name = pair_iter.next().unwrap().as_str();
                     let locals = pair_iter.next().unwrap().as_str().trim();
                     self.write(&format!("({})", name));
+                    self.current_function = name.to_string();
                     for _ in 0..locals.parse::<u16>()? {
                         self.emit_push(PushSource::Constant(0));
                     }
@@ -178,7 +205,6 @@ impl VMComp {
         Ok(())
     }
     fn push(&mut self, pair: Pair<Rule>) -> Result<()> {
-        // println!("push {:?}", pair);
         let mut pair_iter = pair.into_inner();
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
@@ -218,7 +244,6 @@ impl VMComp {
             }
         }
 
-        // println!("push {} {}", segment, index);
         Ok(())
     }
     fn pop(&mut self, pair: Pair<Rule>) -> Result<()> {
@@ -264,8 +289,12 @@ impl VMComp {
                 unreachable!("Unknown segment");
             }
         }
-        println!("pop {} {}", segment, index);
+
         Ok(())
+    }
+
+    fn make_private_label(&self, label: &str) -> String {
+        format!("{}.{}${}", self.file_name, self.current_function, label)
     }
     fn call_st(&mut self, pair: Pair<Rule>) -> Result<()> {
         let mut pair_iter = pair.into_inner();
@@ -276,37 +305,54 @@ impl VMComp {
     }
     fn emit_call(&mut self, name: String, args: String) -> Result<()> {
         let return_label = self.make_label();
-        self.write(&format!("@{}", return_label));
 
-        self.emit_push(PushSource::A);
-        self.write("@LCL");
-        self.write("D=M");
-        self.emit_push(PushSource::D);
-        self.write("@ARG");
-        self.write("D=M");
-        self.emit_push(PushSource::D);
-        self.write("@THIS");
-        self.write("D=M");
-        self.emit_push(PushSource::D);
-        self.write("@THAT");
-        self.write("D=M");
-        self.emit_push(PushSource::D);
-        self.write("@SP");
-        self.write("D=M");
-        self.write("@5");
-        self.write("D=D-A");
-
+        // arg count => R13
         self.write(&format!("@{}", args));
-        self.write("D=D-A");
-        self.write("@ARG");
+        self.write("D=A");
+        self.write("@R13");
         self.write("M=D");
-        self.write("@SP");
-        self.write("D=M");
-        self.write("@LCL");
-        self.write("M=D");
+        // sub to call => R14
         self.write(&format!("@{}", name));
+        self.write("D=A");
+        self.write("@R14");
+        self.write("M=D");
+        // return addr => D
+        self.write(&format!("@{}", return_label));
+        self.write("D=A");
+
+        self.write("@FW__CALL");
         self.write("0;JMP");
         self.write(&format!("({})", return_label));
+
+        // self.emit_push(PushSource::A);
+        // self.write("@LCL");
+        // self.write("D=M");
+        // self.emit_push(PushSource::D);
+        // self.write("@ARG");
+        // self.write("D=M");
+        // self.emit_push(PushSource::D);
+        // self.write("@THIS");
+        // self.write("D=M");
+        // self.emit_push(PushSource::D);
+        // self.write("@THAT");
+        // self.write("D=M");
+        // self.emit_push(PushSource::D);
+        // self.write("@SP");
+        // self.write("D=M");
+        // self.write("@5");
+        // self.write("D=D-A");
+
+        // self.write(&format!("@{}", args));
+        // self.write("D=D-A");
+        // self.write("@ARG");
+        // self.write("M=D");
+        // self.write("@SP");
+        // self.write("D=M");
+        // self.write("@LCL");
+        // self.write("M=D");
+        // self.write(&format!("@{}", name));
+        // self.write("0;JMP");
+        // self.write(&format!("({})", return_label));
         Ok(())
     }
     fn return_st(&mut self) -> Result<()> {
@@ -314,65 +360,65 @@ impl VMComp {
         self.write("0;JMP");
         Ok(())
     }
-    fn return_stx(&mut self) -> Result<()> {
-        self.write("@LCL");
-        self.write("D=M");
-        self.write("@R13"); // R13 = frame
-        self.write("M=D");
-        self.write("@5");
-        self.write("A=D-A");
-        self.write("D=M");
-        self.write("@R14");
-        self.write("M=D"); // retaddr
+    // fn return_stx(&mut self) -> Result<()> {
+    //     self.write("@LCL");
+    //     self.write("D=M");
+    //     self.write("@R13"); // R13 = frame
+    //     self.write("M=D");
+    //     self.write("@5");
+    //     self.write("A=D-A");
+    //     self.write("D=M");
+    //     self.write("@R14");
+    //     self.write("M=D"); // retaddr
 
-        self.emit_dec_load_sp();
-        self.write("D=M");
-        self.write("@ARG");
-        self.write("A=M");
-        self.write("M=D");
+    //     self.emit_dec_load_sp();
+    //     self.write("D=M");
+    //     self.write("@ARG");
+    //     self.write("A=M");
+    //     self.write("M=D");
 
-        self.write("@ARG");
-        self.write("D=M+1");
-        self.write("@SP");
-        self.write("M=D");
+    //     self.write("@ARG");
+    //     self.write("D=M+1");
+    //     self.write("@SP");
+    //     self.write("M=D");
 
-        self.write("@R13");
-        self.write("D=M");
-        self.write("A=D-1");
-        self.write("D=M");
-        self.write("@THAT");
-        self.write("M=D");
+    //     self.write("@R13");
+    //     self.write("D=M");
+    //     self.write("A=D-1");
+    //     self.write("D=M");
+    //     self.write("@THAT");
+    //     self.write("M=D");
 
-        self.write("@2");
-        self.write("D=A");
-        self.write("@R13");
-        self.write("A=M-D");
-        self.write("D=M");
-        self.write("@THIS");
-        self.write("M=D");
+    //     self.write("@2");
+    //     self.write("D=A");
+    //     self.write("@R13");
+    //     self.write("A=M-D");
+    //     self.write("D=M");
+    //     self.write("@THIS");
+    //     self.write("M=D");
 
-        self.write("@3");
-        self.write("D=A");
-        self.write("@R13");
-        self.write("A=M-D");
-        self.write("D=M");
-        self.write("@ARG");
-        self.write("M=D");
+    //     self.write("@3");
+    //     self.write("D=A");
+    //     self.write("@R13");
+    //     self.write("A=M-D");
+    //     self.write("D=M");
+    //     self.write("@ARG");
+    //     self.write("M=D");
 
-        self.write("@4");
-        self.write("D=A");
-        self.write("@R13");
-        self.write("A=M-D");
-        self.write("D=M");
-        self.write("@LCL");
-        self.write("M=D");
+    //     self.write("@4");
+    //     self.write("D=A");
+    //     self.write("@R13");
+    //     self.write("A=M-D");
+    //     self.write("D=M");
+    //     self.write("@LCL");
+    //     self.write("M=D");
 
-        self.write("@R14");
-        self.write("A=M");
-        self.write("0;JMP");
+    //     self.write("@R14");
+    //     self.write("A=M");
+    //     self.write("0;JMP");
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
     fn make_label(&mut self) -> String {
         self.label_count += 1;
         format!("L_{}_{}", self.file_name, self.label_count)
@@ -431,40 +477,6 @@ impl VMComp {
         self.write(&format!("({})", if_label));
         self.write("D=0");
         self.write(&format!("({})", exit_label));
-        // match cmp {
-        //     Comparison::Eq => {
-        //         let if_label = self.make_label();
-        //         let exit_label = self.make_label();
-        //         // if D !=0 {
-        //         //   D=-1
-        //         //}else{
-        //         //  D=0
-        //         //}
-        //         self.write(&format!("@{}", if_label));
-        //         self.write("D;JNE");
-        //         self.write("D=-1");
-        //         self.write(&format!("@{}", exit_label));
-        //         self.write("D;JMP");
-
-        //         self.write(&format!("({})", if_label));
-        //         self.write("D=0");
-        //         self.write(&format!("({})", exit_label));
-        //     }
-        //     Comparison::Lt => {
-        //         let label = self.make_label();
-        //         self.write(&format!("@{}", label));
-        //         self.write("D;JGT");
-        //         self.write("D=0");
-        //         self.write(&format!("({})", label));
-        //     }
-        //     Comparison::Gt => {
-        //         let label = self.make_label();
-        //         self.write(&format!("@{}", label));
-        //         self.write("D;JLT");
-        //         self.write("D=0");
-        //         self.write(&format!("({})", label));
-        //     }
-        // }
 
         self.emit_push(PushSource::D);
     }
