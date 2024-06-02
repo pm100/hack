@@ -14,8 +14,14 @@ pub struct Compiler {
     global_symbols: SymbolTable,
     subroutine_symbols: SymbolTable,
     code: Vec<String>,
+    subroutine_kind: SubroutineKind,
 }
-
+enum SubroutineKind {
+    Constructor,
+    Function,
+    Method,
+    None,
+}
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -23,6 +29,7 @@ impl Compiler {
             global_symbols: SymbolTable::new(),
             subroutine_symbols: SymbolTable::new(),
             code: Vec::new(),
+            subroutine_kind: SubroutineKind::None,
         }
     }
     pub fn output_code(&mut self, output_name: &str) -> Result<()> {
@@ -81,26 +88,39 @@ impl Compiler {
         self.code.push(line.to_string());
     }
     fn do_subroutine(&mut self, pair: Pair<Rule>) -> Result<()> {
+        // subroutine is constructor, method  or function (aka static)
+
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
-        let _kind_str = pair_iter.next().unwrap().as_str();
+        let kind_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
-        let _param_pair = pair_iter.next().unwrap();
+        let param_pair = pair_iter.next().unwrap();
 
-        for pair in pair_iter {
-            match pair.as_rule() {
-                Rule::variables => {
-                    self.do_variables(pair, name_str);
-                }
-                Rule::statements => {
-                    self.do_statments(pair);
-                }
+        // args into the local symbol table
 
-                _ => {
-                    unreachable!("{:?}", pair.as_rule())
-                }
-            }
+        for pair in param_pair.into_inner() {
+            self.do_sub_var(pair, VarKind::Argument)?;
         }
+
+        // what kind is it?
+
+        match kind_str {
+            "constructor" => self.subroutine_kind = SubroutineKind::Constructor,
+            "method" => self.subroutine_kind = SubroutineKind::Method,
+            "function" => self.subroutine_kind = SubroutineKind::Function,
+            _ => unreachable!(),
+        }
+
+        // body is
+        // - one or more locals
+        // - one or more statements
+        // in that order, no mixing
+
+        let var_pair = pair_iter.next().unwrap();
+        self.do_variables(var_pair, name_str)?;
+        let st_pair = pair_iter.next().unwrap();
+        self.do_statments(st_pair);
+        assert!(pair_iter.next().is_none());
         Ok(())
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
@@ -109,28 +129,41 @@ impl Compiler {
             match pair.as_rule() {
                 Rule::do_st => self.do_subcall(pair),
                 Rule::let_st => self.do_let(pair),
-                Rule::while_st => {}
+                Rule::while_st => self.do_while(pair),
                 Rule::return_st => self.do_return(pair),
-                Rule::if_st => {}
+                Rule::if_st => self.do_if(pair),
                 _ => {
                     unreachable!("{:?}", pair.as_rule())
                 }
             }
         }
     }
-    fn do_variables(&mut self, pair: Pair<Rule>, name: &str) {
+    fn do_variables(&mut self, pair: Pair<Rule>, name: &str) -> Result<()> {
         let pair_iter = pair.into_inner();
         let mut local_count = 0;
         for pair in pair_iter {
-            self.do_sub_var(pair);
+            self.do_sub_var(pair, VarKind::Local)?;
             local_count += 1;
         }
         self.write(&format!(
             "function {}.{} {}",
             self.class_name, name, local_count
         ));
+        match self.subroutine_kind {
+            SubroutineKind::Constructor => {
+                self.write(&format!("push constant {}", local_count));
+                self.write("call Memory.alloc 1");
+                self.write("pop pointer 0");
+            }
+            SubroutineKind::Method => {
+                self.write("push argument 0");
+                self.write("pop pointer 0");
+            }
+            _ => {}
+        };
+        Ok(())
     }
-    fn do_sub_var(&mut self, pair: Pair<Rule>) -> Result<()> {
+    fn do_sub_var(&mut self, pair: Pair<Rule>, kind: VarKind) -> Result<()> {
         let mut pair_iter = pair.into_inner();
 
         let type_str = pair_iter.next().unwrap().as_str();
@@ -140,10 +173,11 @@ impl Compiler {
             "int" => VarType::Int,
             "char" => VarType::Char,
             "boolean" => VarType::Bool,
+
             _ => unreachable!(),
         };
         self.subroutine_symbols
-            .insert(name_str.to_string(), vtype, VarKind::Local)?;
+            .insert(name_str.to_string(), vtype, kind)?;
         Ok(())
     }
     fn do_let(&mut self, pair: Pair<Rule>) {
@@ -172,6 +206,9 @@ impl Compiler {
                 }
                 VarKind::Static => {
                     self.write(&format!("pop static {}", symbol.number));
+                }
+                VarKind::Argument => {
+                    self.write(&format!("pop argument {}", symbol.number));
                 }
             },
             None => {
@@ -210,6 +247,9 @@ impl Compiler {
                         }
                         VarKind::Static => {
                             self.write(&format!("push static {}", symbol.number));
+                        }
+                        VarKind::Argument => {
+                            self.write(&format!("push argument {}", symbol.number));
                         }
                     },
                     None => {
@@ -300,5 +340,37 @@ impl Compiler {
             self.do_expr(arg);
         }
         self.write(&format!("call {} {}", name, arg_count));
+    }
+
+    fn do_while(&mut self, pair: Pair<Rule>) {
+        let mut pair_iter = pair.into_inner();
+        let label = format!("WHILE{}", self.code.len());
+        self.write(&format!("label {}", label));
+        let expr = pair_iter.next().unwrap();
+        self.do_expr(expr);
+        self.write("not");
+        let end_label = format!("ENDWHILE{}", self.code.len());
+        self.write(&format!("if-goto {}", end_label));
+        let st = pair_iter.next().unwrap();
+        self.do_statments(st);
+        self.write(&format!("goto {}", label));
+        self.write(&format!("label {}", end_label));
+    }
+
+    fn do_if(&mut self, pair: Pair<Rule>) {
+        let mut pair_iter = pair.into_inner();
+        let expr = pair_iter.next().unwrap();
+        self.do_expr(expr);
+        let label = format!("IF{}", self.code.len());
+        self.write(&format!("if-goto {}", label));
+        let st = pair_iter.next().unwrap();
+        self.do_statments(st);
+        let end_label = format!("ENDIF{}", self.code.len());
+        self.write(&format!("goto {}", end_label));
+        self.write(&format!("label {}", label));
+        if let Some(else_st) = pair_iter.next() {
+            self.do_statments(else_st);
+        }
+        self.write(&format!("label {}", end_label));
     }
 }

@@ -12,6 +12,7 @@ pub enum VarKind {
     Static,
     Field,
     Local,
+    Argument,
 }
 pub struct Symbol {
     pub(crate) name: String,

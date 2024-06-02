@@ -12,28 +12,29 @@ subroutine_type =  { ("constructor" | "function" | "method") }
 parameter_list  =  { ((type ~ var_name) ~ ("," ~ type ~ var_name)*)? }
 identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 var_name        = _{ identifier }
-var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ type ~ var_name)* }
+var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ var_name)* }
 
-statements  =  { (statement ~ ";")* }
+statements  =  { (statement)* }
 variables   =  { (var_dec ~ ";")* }
 statement   = _{ let_st | if_st | while_st | do_st | return_st }
-let_st      =  { "let" ~ var_name ~ (array_index)? ~ "=" ~ expression }
+let_st      =  { "let" ~ var_name ~ (array_index)? ~ "=" ~ expression ~ ";" }
 if_st       =  { "if" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" ~ ("else" ~ "{" ~ statements ~ "}")? }
-while_st    =  { "while" ~ "(" ~ expression ~ ")" ~ "{" ~ expression ~ "}" }
-do_st       =  { "do" ~ subroutine_call }
-return_st   =  { "return" ~ expression? }
+while_st    =  { "while" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" }
+do_st       =  { "do" ~ subroutine_call ~ ";" }
+return_st   =  { "return" ~ expression? ~ ";" }
 field_type  =  { "static" | "field" }
 array_index =  { "[" ~ expression ~ "]" }
 
 expression      =  { term ~ (op ~ term)* }
-term            = _{ int | string | keyword | var_name ~ (array_index)? | var_name | "(" ~ expression ~ ")" | (unary_op ~ term) | subroutine_call }
-subroutine_call = _{ (identifier)? ~ "." ~ subroutine_name ~ "(" ~ expression_list ~ ")" }
+term            = _{ subroutine_call | int | string | keyword | var_name ~ (array_index)? | "(" ~ expression ~ ")" | (unary_op ~ term) }
+dotted_id       = @{ identifier ~ "." ~ identifier }
+subroutine_call = _{ (dotted_id | (subroutine_name)) ~ "(" ~ expression_list ~ ")" }
 expression_list =  { (expression ~ ("," ~ expression)*)? }
 op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
 unary_op        =  { "-" | "+" }
 keyword         =  { "true" | "false" | "null" | "this" }
-string          =  { "\"" ~ ASCII_ALPHANUMERIC* ~ "\"" }
-comment         = _{ "//" ~ (!"\n" ~ ANY)* }
+string          = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+COMMENT         = _{ "//" ~ (!"\n" ~ ANY)* }
 int             =  { ("+" | "-")? ~ ASCII_DIGIT+ }
 hex             =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
 hex_num         =  { "0X" | "0x" ~ hex+ }
