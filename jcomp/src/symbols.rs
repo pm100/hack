@@ -1,19 +1,20 @@
 use anyhow::Result;
 use std::collections::HashMap;
-//pub type SymbolTable = HashMap<String, Symbol>;
+#[derive(Debug, PartialEq)]
 pub enum VarType {
     Int,
     Bool,
     Char,
-    Instance,
+    Instance(String),
 }
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum VarKind {
     Static,
     Field,
     Local,
     Argument,
 }
+#[derive(Debug)]
 pub struct Symbol {
     pub(crate) name: String,
     pub(crate) var_type: VarType,
@@ -56,5 +57,10 @@ impl SymbolTable {
     }
     pub(crate) fn get(&self, name: &str) -> Option<&Symbol> {
         self.table.get(name)
+    }
+    pub(crate) fn dump(&self) {
+        for (name, symbol) in &self.table {
+            println!("{}: {:?}", name, symbol);
+        }
     }
 }

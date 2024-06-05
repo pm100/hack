@@ -2,16 +2,13 @@ use crate::compiler::Compiler;
 use anyhow::Result;
 
 pub mod compiler;
-mod symbols;
-
 mod constants;
+mod expression;
+mod symbols;
 
 use clap::Parser;
 use clap_derive::Parser;
-use std::{
-    fs,
-    path::{self, PathBuf},
-};
+use std::{fs, path::PathBuf};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -31,7 +28,7 @@ fn main() -> Result<()> {
     let output_name = if let Some(outfile) = args.outfile {
         outfile.to_str().unwrap().to_string()
     } else {
-        format!("{}.hack", name)
+        format!("{}.vm", name)
     };
     let mut compiler = Compiler::new();
     compiler.run(&source, name)?;

@@ -17,23 +17,24 @@ var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ var_name)* }
 statements  =  { (statement)* }
 variables   =  { (var_dec ~ ";")* }
 statement   = _{ let_st | if_st | while_st | do_st | return_st }
-let_st      =  { "let" ~ var_name ~ (array_index)? ~ "=" ~ expression ~ ";" }
+let_st      =  { "let" ~ (array_var | var_name) ~ "=" ~ expression ~ ";" }
 if_st       =  { "if" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" ~ ("else" ~ "{" ~ statements ~ "}")? }
 while_st    =  { "while" ~ "(" ~ expression ~ ")" ~ "{" ~ statements ~ "}" }
 do_st       =  { "do" ~ subroutine_call ~ ";" }
 return_st   =  { "return" ~ expression? ~ ";" }
 field_type  =  { "static" | "field" }
 array_index =  { "[" ~ expression ~ "]" }
+array_var   =  { var_name ~ array_index }
 
 expression      =  { term ~ (op ~ term)* }
-term            = _{ subroutine_call | int | string | keyword | var_name ~ (array_index)? | "(" ~ expression ~ ")" | (unary_op ~ term) }
+term            = _{ subroutine_call | int | string | keyword | (array_var | var_name) | "(" ~ expression ~ ")" | (unary_op ~ term) }
 dotted_id       = @{ identifier ~ "." ~ identifier }
-subroutine_call = _{ (dotted_id | (subroutine_name)) ~ "(" ~ expression_list ~ ")" }
+subroutine_call =  { (dotted_id | (subroutine_name)) ~ "(" ~ expression_list ~ ")" }
 expression_list =  { (expression ~ ("," ~ expression)*)? }
 op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
 unary_op        =  { "-" | "+" }
 keyword         =  { "true" | "false" | "null" | "this" }
-string          = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+string          = ${ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 COMMENT         = _{ "//" ~ (!"\n" ~ ANY)* }
 int             =  { ("+" | "-")? ~ ASCII_DIGIT+ }
 hex             =  { '0'..'9' | 'a'..'f' | 'A'..'F' }

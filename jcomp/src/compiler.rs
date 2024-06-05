@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use anyhow::Result;
 use pest::{iterators::Pair, Parser};
@@ -10,13 +10,13 @@ use super::symbols::{SymbolTable, VarKind, VarType};
 pub struct JackParser;
 
 pub struct Compiler {
-    class_name: String,
-    global_symbols: SymbolTable,
-    subroutine_symbols: SymbolTable,
-    code: Vec<String>,
-    subroutine_kind: SubroutineKind,
+    pub(crate) class_name: String,
+    pub(crate) global_symbols: SymbolTable,
+    pub(crate) subroutine_symbols: SymbolTable,
+    pub(crate) code: Vec<String>,
+    pub(crate) subroutine_kind: SubroutineKind,
 }
-enum SubroutineKind {
+pub(crate) enum SubroutineKind {
     Constructor,
     Function,
     Method,
@@ -53,9 +53,8 @@ impl Compiler {
                     self.do_subroutine(pair)?;
                 }
                 Rule::EOI => {
-                    // for line in self.code.iter() {
-                    //     println!("{}", line);
-                    // }
+                    println!("Global symbols");
+                    self.global_symbols.dump();
                 }
                 _ => {}
             }
@@ -78,13 +77,13 @@ impl Compiler {
             "int" => VarType::Int,
             "char" => VarType::Char,
             "boolean" => VarType::Bool,
-            _ => unreachable!(),
+            _ => VarType::Instance(type_str.to_string()),
         };
         self.global_symbols
             .insert(name_str.to_string(), vtype, kind)?;
         Ok(())
     }
-    fn write(&mut self, line: &str) {
+    pub(crate) fn write(&mut self, line: &str) {
         self.code.push(line.to_string());
     }
     fn do_subroutine(&mut self, pair: Pair<Rule>) -> Result<()> {
@@ -121,13 +120,19 @@ impl Compiler {
         let st_pair = pair_iter.next().unwrap();
         self.do_statments(st_pair);
         assert!(pair_iter.next().is_none());
+        self.subroutine_symbols.dump();
         Ok(())
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
         let pair_iter = pair.into_inner();
         for pair in pair_iter {
+            println!("{} => {:?}", pair.line_col().0, pair.as_str());
             match pair.as_rule() {
-                Rule::do_st => self.do_subcall(pair),
+                Rule::do_st => {
+                    self.do_subcall(pair.into_inner().next().unwrap());
+                    self.write("pop temp 0");
+                }
+
                 Rule::let_st => self.do_let(pair),
                 Rule::while_st => self.do_while(pair),
                 Rule::return_st => self.do_return(pair),
@@ -142,8 +147,7 @@ impl Compiler {
         let pair_iter = pair.into_inner();
         let mut local_count = 0;
         for pair in pair_iter {
-            self.do_sub_var(pair, VarKind::Local)?;
-            local_count += 1;
+            local_count += self.do_sub_var(pair, VarKind::Local)?;
         }
         self.write(&format!(
             "function {}.{} {}",
@@ -163,157 +167,148 @@ impl Compiler {
         };
         Ok(())
     }
-    fn do_sub_var(&mut self, pair: Pair<Rule>, kind: VarKind) -> Result<()> {
+    fn do_sub_var(&mut self, pair: Pair<Rule>, kind: VarKind) -> Result<i32> {
         let mut pair_iter = pair.into_inner();
 
         let type_str = pair_iter.next().unwrap().as_str();
-        let name_str = pair_iter.next().unwrap().as_str();
-
-        let vtype = match type_str {
-            "int" => VarType::Int,
-            "char" => VarType::Char,
-            "boolean" => VarType::Bool,
-
-            _ => unreachable!(),
-        };
-        self.subroutine_symbols
-            .insert(name_str.to_string(), vtype, kind)?;
-        Ok(())
+        let mut local_count = 0;
+        loop {
+            let maybe_name_str = pair_iter.next();
+            if maybe_name_str.is_none() {
+                break;
+            }
+            let name_str = maybe_name_str.unwrap().as_str();
+            let vtype = match type_str {
+                "int" => VarType::Int,
+                "char" => VarType::Char,
+                "boolean" => VarType::Bool,
+                _ => VarType::Instance(type_str.to_string()),
+            };
+            self.subroutine_symbols
+                .insert(name_str.to_string(), vtype, kind.clone())?;
+            local_count += 1;
+        }
+        Ok(local_count)
     }
-    fn do_let(&mut self, pair: Pair<Rule>) {
+
+    fn do_lhs_array(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
-
-        let name_str = pair_iter.next().unwrap().as_str();
-        println!("let name {:?}", name_str);
-        let maybe_idx = pair_iter.next().unwrap();
-        let expr = if maybe_idx.as_rule() == Rule::array_index {
-            self.do_expr(maybe_idx);
-            pair_iter.next().unwrap()
-        } else {
-            maybe_idx
-        };
-        println!("{:?}", expr.as_rule());
-        self.do_expr(expr);
-
-        let symbol = self.subroutine_symbols.get(name_str);
+        let name = pair_iter.next().unwrap().as_str();
+        let symbol = self.subroutine_symbols.get(name);
         match symbol {
             Some(symbol) => match symbol.var_kind {
                 VarKind::Local => {
-                    self.write(&format!("pop local {}", symbol.number));
+                    self.write(&format!("push local {}", symbol.number));
                 }
                 VarKind::Field => {
-                    self.write(&format!("pop field {}", symbol.number));
+                    self.write(&format!("push field {}", symbol.number));
                 }
                 VarKind::Static => {
-                    self.write(&format!("pop static {}", symbol.number));
+                    self.write(&format!("push static {}", symbol.number));
                 }
                 VarKind::Argument => {
-                    self.write(&format!("pop argument {}", symbol.number));
+                    self.write(&format!("push argument {}", symbol.number));
                 }
             },
             None => {
-                if let Some(symbol) = self.global_symbols.get(name_str) {
+                if let Some(symbol) = self.global_symbols.get(name) {
                     match symbol.var_kind {
                         VarKind::Field => {
-                            self.write(&format!("pop this {}", symbol.number));
-                        }
-                        VarKind::Static => {
-                            self.write(&format!("pop static {}", symbol.number));
-                        }
-                        _ => unreachable!(),
-                    }
-                } else {
-                    println!("Symbol {} not found", name_str);
-                }
-            }
-        }
-    }
-    fn do_term(&mut self, term: Pair<Rule>) {
-        println!("term {:?}", term.as_str());
-        match term.as_rule() {
-            Rule::int => {
-                self.write(&format!("push constant {}", term.as_str()));
-            }
-            Rule::identifier => {
-                let name = term.as_str();
-                let symbol = self.subroutine_symbols.get(name);
-                match symbol {
-                    Some(symbol) => match symbol.var_kind {
-                        VarKind::Local => {
-                            self.write(&format!("push local {}", symbol.number));
-                        }
-                        VarKind::Field => {
-                            self.write(&format!("push field {}", symbol.number));
+                            self.write(&format!("push this {}", symbol.number));
                         }
                         VarKind::Static => {
                             self.write(&format!("push static {}", symbol.number));
                         }
-                        VarKind::Argument => {
-                            self.write(&format!("push argument {}", symbol.number));
-                        }
-                    },
-                    None => {
-                        let symbol = self.global_symbols.get(name).unwrap();
+                        _ => unreachable!(),
+                    }
+                } else {
+                    println!("Symbol {} not found", name);
+                }
+            }
+        }
+        self.do_expr(pair_iter.next().unwrap());
+        self.write("add");
+    }
+    fn do_let(&mut self, pair: Pair<Rule>) {
+        // let name<[expr]> = expr;
+
+        // LHS first
+        let mut pair_iter = pair.into_inner();
+
+        let lhs = pair_iter.next().unwrap();
+
+        let name_str = lhs.as_str();
+        println!("lhs {:?} {}", lhs.as_rule(), lhs.as_str());
+        let mut array = false;
+
+        match lhs.as_rule() {
+            Rule::array_var => {
+                self.do_lhs_array(lhs);
+                array = true;
+            }
+            Rule::identifier => {}
+            _ => unreachable!(),
+        }
+
+        // array index?
+        // let maybe_idx = pair_iter.next().unwrap();
+        // let expr = if maybe_idx.as_rule() == Rule::array_index {
+        //     // array on lhs
+        //     array = true;
+        //     self.do_lhs_array(name_str, maybe_idx);
+        //     pair_iter.next().unwrap()
+        // } else {
+        //     maybe_idx
+        // };
+
+        // now the expression
+
+        let expr = pair_iter.next().unwrap();
+        println!("rhs {:?} {}", expr.as_rule(), expr.as_str());
+        self.do_expr(expr);
+
+        // finally pop the value to the correct variable
+        if array {
+            self.write("pop temp 0");
+            self.write("pop pointer 1");
+            self.write("push temp 0");
+            self.write("pop that 0");
+        } else {
+            let symbol = self.subroutine_symbols.get(name_str);
+            match symbol {
+                Some(symbol) => match symbol.var_kind {
+                    VarKind::Local => {
+                        self.write(&format!("pop local {}", symbol.number));
+                    }
+                    VarKind::Field => {
+                        self.write(&format!("pop field {}", symbol.number));
+                    }
+                    VarKind::Static => {
+                        self.write(&format!("pop static {}", symbol.number));
+                    }
+                    VarKind::Argument => {
+                        self.write(&format!("pop argument {}", symbol.number));
+                    }
+                },
+                None => {
+                    if let Some(symbol) = self.global_symbols.get(name_str) {
                         match symbol.var_kind {
                             VarKind::Field => {
-                                self.write(&format!("push this {}", symbol.number));
+                                self.write(&format!("pop this {}", symbol.number));
                             }
                             VarKind::Static => {
-                                self.write(&format!("push static {}", symbol.number));
+                                self.write(&format!("pop static {}", symbol.number));
                             }
                             _ => unreachable!(),
                         }
+                    } else {
+                        println!("Symbol {} not found", name_str);
                     }
                 }
             }
-            Rule::string => {
-                let s = term.as_str();
-                self.write(&format!("push constant {}", s.len()));
-                self.write("call String.new 1");
-                for c in s.chars() {
-                    self.write(&format!("push constant {}", c as u32));
-                    self.write("call String.appendChar 2");
-                }
-            }
-            Rule::expression => {
-                self.do_expr(term);
-            }
-            _ => {
-                unreachable!()
-            }
         }
     }
-    fn do_expr(&mut self, pair: Pair<Rule>) {
-        let mut pair_iter = pair.into_inner();
-        let first_term = pair_iter.next().unwrap();
-        self.do_term(first_term);
-        // println!("ft {:?}", first_term.as_str());
-        loop {
-            if let Some(op) = pair_iter.next() {
-                let term = pair_iter.next().unwrap();
-                println!("op {:?}", op.as_str());
-                self.do_term(term);
-                match op.as_str() {
-                    "+" => self.write("add"),
-                    "-" => self.write("sub"),
-                    "<" => self.write("lt"),
-                    ">" => self.write("gt"),
-                    "&" => self.write("and"),
-                    "|" => self.write("or"),
-                    "*" => self.mul(),
-                    "/" => self.div(),
-                    _ => unreachable!(),
-                }
-            } else {
-                break;
-            }
-        }
-    }
-    fn div(&mut self) {}
-    fn mul(&mut self) {
-        println!("mul");
-        self.write("call Math.multiply 2");
-    }
+
     fn do_return(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
         if let Some(expr) = pair_iter.next() {
@@ -323,19 +318,14 @@ impl Compiler {
         }
         self.write("return");
     }
-    fn do_subcall(&mut self, pair: Pair<Rule>) {
+    pub(crate) fn do_subcall(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
-        let mut name = pair_iter.next().unwrap().as_str().to_string();
-        // next is either .name or arg list
-        let mut maybe_name_or_args = pair_iter.next().unwrap();
-        if maybe_name_or_args.as_rule() == Rule::identifier {
-            name = format!("{}.{}", name, maybe_name_or_args.as_str());
-            maybe_name_or_args = pair_iter.next().unwrap();
-        } else {
-            name = format!("{}.{}", self.class_name, name);
-        }
+        // first is name
+        let name = pair_iter.next().unwrap().as_str().to_string();
+        println!("sub name {}", name);
+        // now arguments
         let mut arg_count = 0;
-        for arg in maybe_name_or_args.into_inner() {
+        for arg in pair_iter.next().unwrap().into_inner() {
             arg_count += 1;
             self.do_expr(arg);
         }
