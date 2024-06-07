@@ -1,0 +1,23 @@
+class Animal{
+    field int _age;
+    field String _name;
+    constructor Animal new(int age, String name){
+      
+        let _age = age;
+        let _name = name;
+        return this;
+    }
+    method void speak(){
+    var int s;
+        do Output.printString(_name);
+        return;
+    }
+    method void maybe_speak(int limit){
+        if (_age > limit){
+            do Output.printString("old");
+        }else{
+            do speak();
+        }
+        return;
+    }
+}

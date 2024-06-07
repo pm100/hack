@@ -5,14 +5,16 @@ class_var =  { field_type ~ type ~ identifier ~ ("," ~ identifier)* ~ ";" }
 
 type            =  { "int" | "char" | "boolean" | class_name }
 class_name      =  { identifier }
-subroutine      =  { subroutine_type ~ ("void" | type) ~ subroutine_name ~ "(" ~ parameter_list ~ ")" ~ subroutine_body }
+subroutine      =  { subroutine_type ~ (void | type) ~ subroutine_name ~ "(" ~ parameter_list ~ ")" ~ subroutine_body }
 subroutine_name = _{ identifier }
 subroutine_body = _{ "{" ~ variables ~ statements ~ "}" }
 subroutine_type =  { ("constructor" | "function" | "method") }
-parameter_list  =  { ((type ~ var_name) ~ ("," ~ type ~ var_name)*)? }
+parameter_list  =  { (parameter ~ ("," ~ parameter)*)? }
 identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 var_name        = _{ identifier }
 var_dec         =  { "var" ~ type ~ var_name ~ ("," ~ var_name)* }
+parameter       =  { type ~ var_name }
+void            =  { "void" }
 
 statements  =  { (statement)* }
 variables   =  { (var_dec ~ ";")* }
@@ -35,7 +37,7 @@ op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
 unary_op        =  { "-" | "+" }
 keyword         =  { "true" | "false" | "null" | "this" }
 string          = ${ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-COMMENT         = _{ "//" ~ (!"\n" ~ ANY)* }
+COMMENT         = _{ ("//" ~ (!"\n" ~ ANY)*) | ("/*" ~ (!"*/" ~ ANY)* ~ "*/") }
 int             =  { ("+" | "-")? ~ ASCII_DIGIT+ }
 hex             =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
 hex_num         =  { "0X" | "0x" ~ hex+ }

@@ -2,38 +2,34 @@ use pest::iterators::Pair;
 
 use crate::{
     compiler::{Compiler, Rule},
-    symbols::VarKind,
+    symbols::{Symbol, VarKind},
 };
 
 impl Compiler {
-    fn push_symbol(&mut self, name: &str) {
+    pub(crate) fn push_symbol(&mut self, symbol: &Symbol) {
+        match symbol.var_kind {
+            VarKind::Local => {
+                self.write(&format!("push local {}", symbol.number));
+            }
+            VarKind::Field => {
+                self.write(&format!("push this {}", symbol.number));
+            }
+            VarKind::Static => {
+                self.write(&format!("push static {}", symbol.number));
+            }
+            VarKind::Argument => {
+                self.write(&format!("push argument {}", symbol.number));
+            }
+        }
+    }
+    pub(crate) fn lookup_push_symbol(&mut self, name: &str) {
         let symbol = self.subroutine_symbols.get(name);
         match symbol {
-            Some(symbol) => match symbol.var_kind {
-                VarKind::Local => {
-                    self.write(&format!("push local {}", symbol.number));
-                }
-                VarKind::Field => {
-                    self.write(&format!("push field {}", symbol.number));
-                }
-                VarKind::Static => {
-                    self.write(&format!("push static {}", symbol.number));
-                }
-                VarKind::Argument => {
-                    self.write(&format!("push argument {}", symbol.number));
-                }
-            },
+            Some(symbol) => self.push_symbol(&symbol.clone()),
+
             None => {
                 if let Some(symbol) = self.global_symbols.get(name) {
-                    match symbol.var_kind {
-                        VarKind::Field => {
-                            self.write(&format!("push this {}", symbol.number));
-                        }
-                        VarKind::Static => {
-                            self.write(&format!("push static {}", symbol.number));
-                        }
-                        _ => unreachable!(),
-                    }
+                    self.push_symbol(&symbol.clone())
                 } else {
                     println!("Symbol {} not found", name);
                 }
@@ -56,13 +52,13 @@ impl Compiler {
             }
             Rule::identifier => {
                 let name = term.as_str();
-                self.push_symbol(name);
+                self.lookup_push_symbol(name);
             }
             Rule::array_var => {
                 let mut array_var_iter = term.into_inner();
                 let name = array_var_iter.next().unwrap().as_str();
                 println!("array_var {}", name);
-                self.push_symbol(name);
+                self.lookup_push_symbol(name);
                 let index = array_var_iter.next().unwrap();
                 self.do_expr(index);
                 self.write("add");

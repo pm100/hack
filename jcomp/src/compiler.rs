@@ -3,6 +3,8 @@ use std::fs;
 use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 
+use crate::symbols::Symbol;
+
 use super::symbols::{SymbolTable, VarKind, VarType};
 
 #[derive(pest_derive::Parser)]
@@ -16,6 +18,7 @@ pub struct Compiler {
     pub(crate) code: Vec<String>,
     pub(crate) subroutine_kind: SubroutineKind,
 }
+#[derive(PartialEq)]
 pub(crate) enum SubroutineKind {
     Constructor,
     Function,
@@ -92,9 +95,10 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
         let kind_str = pair_iter.next().unwrap().as_str();
+        let return_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
         let param_pair = pair_iter.next().unwrap();
-
+        println!("{} {} {}", kind_str, return_str, name_str);
         // args into the local symbol table
 
         for pair in param_pair.into_inner() {
@@ -146,6 +150,14 @@ impl Compiler {
     fn do_variables(&mut self, pair: Pair<Rule>, name: &str) -> Result<()> {
         let pair_iter = pair.into_inner();
         let mut local_count = 0;
+        if self.subroutine_kind == SubroutineKind::Method {
+            self.subroutine_symbols.insert(
+                "this".to_string(),
+                VarType::Instance(name.to_string()),
+                VarKind::Argument,
+            )?;
+            local_count += 1;
+        }
         for pair in pair_iter {
             local_count += self.do_sub_var(pair, VarKind::Local)?;
         }
@@ -155,7 +167,8 @@ impl Compiler {
         ));
         match self.subroutine_kind {
             SubroutineKind::Constructor => {
-                self.write(&format!("push constant {}", local_count));
+                let field_count = self.global_symbols.get_count(VarKind::Field);
+                self.write(&format!("push constant {}", field_count));
                 self.write("call Memory.alloc 1");
                 self.write("pop pointer 0");
             }
@@ -168,6 +181,7 @@ impl Compiler {
         Ok(())
     }
     fn do_sub_var(&mut self, pair: Pair<Rule>, kind: VarKind) -> Result<i32> {
+        println!("{} {:?}=> ", pair.as_str(), pair.as_rule());
         let mut pair_iter = pair.into_inner();
 
         let type_str = pair_iter.next().unwrap().as_str();
@@ -318,13 +332,76 @@ impl Compiler {
         }
         self.write("return");
     }
+    // fn foo(&self, left: &str) -> Option<Symbol> {
+    //     let sym = {
+    //         if let Some(symbol) = self.subroutine_symbols.get(&left) {
+    //             Some(symbol.clone())
+    //         } else {
+    //             if let Some(symbol) = self.global_symbols.get(&left) {
+    //                 Some(symbol.clone())
+    //             } else {
+    //                 None
+    //             }
+    //         }
+    //     };
+    //     sym
+    // }
     pub(crate) fn do_subcall(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
         // first is name
-        let name = pair_iter.next().unwrap().as_str().to_string();
-        println!("sub name {}", name);
-        // now arguments
+        let name_pair = pair_iter.next().unwrap(); //.as_str().to_string();
+                                                   //println!("sub name {}", name);
+        let name;
         let mut arg_count = 0;
+        match name_pair.as_rule() {
+            Rule::identifier => {
+                // func => this.func => ThisClass.func
+                name = format!("{}.{}", self.class_name, name_pair.as_str());
+                self.write("push pointer 0");
+                arg_count += 1;
+            }
+            Rule::dotted_id => {
+                let id = name_pair.as_str().to_string();
+                let mut bits = id.split('.');
+                let left = bits.next().unwrap().to_string();
+                let func = bits.next().unwrap();
+
+                // left hand side is either
+                // - a local variable
+                // - a global variable or field
+                // - a class name Foo.func
+                // in the first 2 replace foo.bar with ClassName.bar
+                // Its the last one if its not a known symbol
+
+                let sym = {
+                    if let Some(symbol) = self.subroutine_symbols.get(&left) {
+                        Some(symbol.clone())
+                    } else {
+                        if let Some(symbol) = self.global_symbols.get(&left) {
+                            Some(symbol.clone())
+                        } else {
+                            None
+                        }
+                    }
+                };
+                let cl = if let Some(ref symbol) = sym {
+                    match &symbol.var_type {
+                        VarType::Instance(cl) => {
+                            self.push_symbol(&symbol);
+                            arg_count += 1;
+                            cl
+                        }
+                        _ => &left,
+                    }
+                } else {
+                    &left
+                };
+                name = format!("{}.{}", cl, func);
+            }
+            _ => unreachable!(),
+        }
+        // now arguments
+
         for arg in pair_iter.next().unwrap().into_inner() {
             arg_count += 1;
             self.do_expr(arg);

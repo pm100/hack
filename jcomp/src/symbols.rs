@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum VarType {
     Int,
     Bool,
@@ -14,7 +14,7 @@ pub enum VarKind {
     Local,
     Argument,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
     pub(crate) name: String,
     pub(crate) var_type: VarType,
@@ -62,5 +62,11 @@ impl SymbolTable {
         for (name, symbol) in &self.table {
             println!("{}: {:?}", name, symbol);
         }
+    }
+    pub(crate) fn get_count(&self, kind: VarKind) -> i32 {
+        self.table
+            .iter()
+            .filter(|(_, symbol)| symbol.var_kind == kind)
+            .count() as i32
     }
 }

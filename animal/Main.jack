@@ -1,0 +1,9 @@
+class Main{
+
+    function void main(){
+        var Animal animal;
+        let animal = Animal.new(42,"fido");
+        do animal.maybe_speak(50);
+        return;
+    }
+}
