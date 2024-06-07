@@ -77,6 +77,22 @@ impl Compiler {
             Rule::expression => {
                 self.do_expr(term);
             }
+            Rule::keyword => match term.as_str() {
+                "true" => {
+                    self.write("push constant 1");
+                    self.write("neg");
+                }
+                "false" => {
+                    self.write("push constant 0");
+                }
+                "null" => {
+                    self.write("push constant 0");
+                }
+                "this" => {
+                    self.write("push pointer 0");
+                }
+                _ => unreachable!(),
+            },
             _ => {
                 println!("unknown term {:?},{}", term.as_rule(), term.as_str());
             }
@@ -111,6 +127,7 @@ impl Compiler {
                     "|" => self.write("or"),
                     "*" => self.mul(),
                     "/" => self.div(),
+                    "=" => self.write("eq"),
                     _ => unreachable!(),
                 }
             } else {

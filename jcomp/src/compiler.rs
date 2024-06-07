@@ -208,7 +208,9 @@ impl Compiler {
     fn do_lhs_array(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
         let name = pair_iter.next().unwrap().as_str();
+        self.do_expr(pair_iter.next().unwrap());
         let symbol = self.subroutine_symbols.get(name);
+
         match symbol {
             Some(symbol) => match symbol.var_kind {
                 VarKind::Local => {
@@ -240,7 +242,7 @@ impl Compiler {
                 }
             }
         }
-        self.do_expr(pair_iter.next().unwrap());
+
         self.write("add");
     }
     fn do_let(&mut self, pair: Pair<Rule>) {
@@ -428,13 +430,18 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         let expr = pair_iter.next().unwrap();
         self.do_expr(expr);
-        let label = format!("IF{}", self.code.len());
-        self.write(&format!("if-goto {}", label));
+        let true_label = format!("IFTRUE{}", self.code.len());
+        let false_label = format!("IFFALSE{}", self.code.len());
+        let end_label = format!("IFEND{}", self.code.len());
+        self.write(&format!("if-goto {}", true_label));
+        self.write(&format!("goto {}", false_label));
+        self.write(&format!("label {}", true_label));
+
         let st = pair_iter.next().unwrap();
         self.do_statments(st);
-        let end_label = format!("ENDIF{}", self.code.len());
+
         self.write(&format!("goto {}", end_label));
-        self.write(&format!("label {}", label));
+        self.write(&format!("label {}", false_label));
         if let Some(else_st) = pair_iter.next() {
             self.do_statments(else_st);
         }
