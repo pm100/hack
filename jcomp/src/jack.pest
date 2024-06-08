@@ -34,7 +34,7 @@ dotted_id       = @{ identifier ~ "." ~ identifier }
 subroutine_call =  { (dotted_id | (subroutine_name)) ~ "(" ~ expression_list ~ ")" }
 expression_list =  { (expression ~ ("," ~ expression)*)? }
 op              =  { "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&" | "|" }
-unary_op        =  { "-" | "+" }
+unary_op        =  { "-" | "~" }
 keyword         =  { "true" | "false" | "null" | "this" }
 string          = ${ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 COMMENT         = _{ ("//" ~ (!"\n" ~ ANY)*) | ("/*" ~ (!"*/" ~ ANY)* ~ "*/") }

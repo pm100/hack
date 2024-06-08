@@ -45,7 +45,13 @@ impl Compiler {
         println!("term {:?} {:?}", term.as_str(), term.as_rule());
         match term.as_rule() {
             Rule::int => {
-                self.write(&format!("push constant {}", term.as_str()));
+                let val = term.as_str().parse::<i32>().unwrap();
+                if val < 0 {
+                    self.write(&format!("push constant {}", -val));
+                    self.write("neg");
+                } else {
+                    self.write(&format!("push constant {}", val));
+                }
             }
             Rule::subroutine_call => {
                 self.do_subcall(term);
@@ -105,13 +111,20 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         let first_term = pair_iter.next().unwrap();
 
-        // match first_term.as_rule() {
-        //     Rule::term => self.do_term(first_term),
-        //     Rule::subroutine_call => self.do_subcall(first_term),
-        //     _ => unreachable!("{:?} {:?}", first_term.as_rule(), first_term.as_str()),
-        // }
         println!("ft {:?} {:?}", first_term.as_str(), first_term.as_rule());
-        self.do_term(first_term);
+        match first_term.as_rule() {
+            Rule::unary_op => {
+                let term = pair_iter.next().unwrap();
+                self.do_term(term);
+                match first_term.as_str() {
+                    "-" => self.write("neg"),
+                    "~" => self.write("not"),
+                    _ => unreachable!(),
+                }
+            }
+            _ => self.do_term(first_term),
+        }
+
         loop {
             if let Some(op) = pair_iter.next() {
                 println!("op {:?}", op.as_str());
