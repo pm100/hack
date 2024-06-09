@@ -133,7 +133,8 @@ impl Assembler {
         }
 
         self.instructions.push(
-            Self::generate_comp(comp) << 6
+            0x8000
+                | Self::generate_comp(comp) << 6
                 | Self::generate_dest(&dest) << 3
                 | Self::generate_jump(jump),
         );
