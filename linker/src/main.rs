@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     }
 
     let mut linker = Linker::new();
-    linker.load(&fs::read_to_string(&main_path)?, "Main")?;
+    //  linker.load(&fs::read_to_string(&main_path)?, "Main")?;
     load_dir(input_path.as_path(), &mut linker, &main_path)?;
 
     if let Some(oslib) = args.lib {
@@ -74,9 +74,9 @@ fn load_dir(path: &Path, linker: &mut Linker, main_path: &PathBuf) -> Result<()>
         let path = entry.path();
 
         if path.is_file() {
-            if path == main_path.as_path() {
-                continue;
-            }
+            // if path == main_path.as_path() {
+            //     continue;
+            // }
             if let Some(ftype) = path.extension() {
                 if ftype.to_str().unwrap() == "vm" {
                     println!("loading {:?}", path);

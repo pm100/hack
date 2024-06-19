@@ -21,6 +21,7 @@ pub struct VMComp {
     file_name: String,
     label_count: i32,
     current_function: String,
+    current_module: String,
 }
 impl VMComp {
     pub fn new() -> Self {
@@ -29,6 +30,7 @@ impl VMComp {
             file_name: String::new(),
             label_count: 0,
             current_function: String::new(),
+            current_module: String::new(),
         }
     }
     pub fn output_code(&self, output_name: &str) -> Result<()> {
@@ -148,6 +150,7 @@ impl VMComp {
     pub fn run(&mut self, source: &str, file_name: &str) -> Result<()> {
         self.file_name = file_name.to_string();
         self.current_function = String::new();
+        self.current_module = String::new();
         let pairs = VMParser::parse(Rule::program, source)?;
         for pair in pairs {
             // insert original source line as comment
@@ -171,14 +174,14 @@ impl VMComp {
                 }
                 Rule::goto_st => {
                     let label = pair.into_inner().next().unwrap().as_str();
-                    self.write(&self.make_private_label(label));
+                    self.write(&format!("@{}", self.make_private_label(label)));
                     self.write("0;JMP");
                 }
                 Rule::if_goto_st => {
                     let label = pair.into_inner().next().unwrap().as_str();
                     self.emit_dec_load_sp();
                     self.write("D=M");
-                    self.write(&self.make_private_label(label));
+                    self.write(&format!("@{}", self.make_private_label(label)));
                     self.write("D;JNE");
                 }
                 Rule::function_st => {
@@ -187,6 +190,8 @@ impl VMComp {
                     let locals = pair_iter.next().unwrap().as_str().trim();
                     self.write(&format!("({})", name));
                     self.current_function = name.to_string();
+                    self.current_module =
+                        self.current_function.split(".").next().unwrap().to_string();
                     for _ in 0..locals.parse::<u16>()? {
                         self.emit_push(PushSource::Constant(0));
                     }
@@ -234,7 +239,7 @@ impl VMComp {
                 self.emit_push(PushSource::D);
             }
             Rule::static_seg => {
-                self.write(&format!("@{}.{}", self.file_name, index));
+                self.write(&format!("@{}.{}", self.current_module, index));
                 self.write("D=M");
                 self.emit_push(PushSource::D);
             }
@@ -281,7 +286,7 @@ impl VMComp {
             Rule::static_seg => {
                 self.emit_dec_load_sp();
                 self.write("D=M");
-                self.write(&format!("@{}.{}", self.file_name, index));
+                self.write(&format!("@{}.{}", self.current_module, index));
                 self.write("M=D");
             }
 

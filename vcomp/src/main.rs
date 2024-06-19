@@ -56,8 +56,9 @@ fn main() -> Result<()> {
         if args.add_bootstrap {
             vmcompiler.bootstrap()?;
         }
-        vmcompiler.emit_firmware()?;
+
         vmcompiler.run(&source, name)?;
+        vmcompiler.emit_firmware()?;
     }
     vmcompiler.output_code(&output_name)?;
     Ok(())

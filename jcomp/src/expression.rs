@@ -45,7 +45,7 @@ impl Compiler {
         println!("term {:?} {:?}", term.as_str(), term.as_rule());
         match term.as_rule() {
             Rule::int => {
-                let val = term.as_str().parse::<i32>().unwrap();
+                let val = term.as_str().trim().parse::<i32>().unwrap();
                 if val < 0 {
                     self.write(&format!("push constant {}", -val));
                     self.write("neg");

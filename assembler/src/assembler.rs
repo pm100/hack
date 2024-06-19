@@ -1,8 +1,9 @@
+use crate::{constants, Format};
 use anyhow::{Context, Result};
 use pest::{iterators::Pair, Parser};
+use std::collections::BTreeMap;
+use std::io::Write;
 use std::{collections::HashMap, fs};
-
-use crate::{constants, Format};
 #[derive(pest_derive::Parser)]
 #[grammar = "asm.pest"]
 pub struct AsmParser;
@@ -10,7 +11,9 @@ pub struct AsmParser;
 pub struct Assembler {
     labels: HashMap<String, i64>,
     instructions: Vec<u16>,
-    forward_references: HashMap<String, Vec<isize>>,
+    forward_references: BTreeMap<String, Vec<isize>>,
+    lines: Vec<(String, usize)>,
+    halt_addr: u16,
 }
 
 impl Assembler {
@@ -19,39 +22,76 @@ impl Assembler {
             // variables: HashMap::new(),
             labels: HashMap::new(),
             instructions: Vec::new(),
-            forward_references: HashMap::new(),
+            forward_references: BTreeMap::new(),
+            lines: Vec::new(),
+            halt_addr: 0,
         }
     }
     pub fn run(&mut self, source: &str, _name: &str) -> Result<()> {
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
+            let line = pair.clone();
             match pair.as_rule() {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
                 Rule::l_inst => self.parse_l(pair)?,
+                Rule::comment => (),
                 Rule::EOI => self.complete()?,
                 _ => {
                     unreachable!()
                 }
             }
+            self.lines
+                .push((line.as_str().to_string(), self.instructions.len() - 1))
         }
 
         Ok(())
     }
 
     pub fn output_code(self, output_name: &str, format: Format) -> Result<()> {
-        let code = self
-            .instructions
-            .iter()
-            .map(|x| match format {
-                Format::RawBinary => format!("{:016b}", *x),
-                Format::RawHex => format!("{:04x}", *x),
-            })
-            .collect::<Vec<String>>()
-            .join("\n");
-        println!("writing to file {}", output_name);
-        fs::write(output_name, code).expect("Unable to write file");
+        match format {
+            Format::Hackem => {
+                let mut ofile = fs::File::create(output_name)?;
+                writeln!(ofile, "hackem v1.0 0x{0:4x}", self.halt_addr)?; // write header (required by hackem)
+                writeln!(ofile, "ROM@0000")?;
+                for line in self.instructions.iter() {
+                    writeln!(ofile, "{:04x}", line)?;
+                }
+            }
+            Format::Test => {
+                let mut ofile = fs::File::create(output_name)?;
+                let mut off = 0;
+                for line in self.instructions.iter() {
+                    writeln!(ofile, " cpu.rom[{}]=0x{:04x};", off, line)?;
+                    off += 1;
+                }
+            }
+            Format::RawBinary | Format::RawHex => {
+                let code = self
+                    .instructions
+                    .iter()
+                    .map(|x| match format {
+                        Format::RawBinary => format!("{:016b}", *x),
+                        Format::RawHex => format!("{:04x}", *x),
+                        _ => unreachable!("Invalid format"),
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                println!("writing to file {}", output_name);
+                fs::write(output_name, code).expect("Unable to write file");
+            }
+        }
         Ok(())
+    }
+    pub fn listing(&self) -> String {
+        let mut ret = String::new();
+        for (line, addr) in self.lines.iter() {
+            ret.push_str(&format!(
+                "0x{:04x} ({:5})   0x{:04x}     {}\n",
+                addr, addr, self.instructions[*addr], line
+            ));
+        }
+        ret
     }
     fn parse_a(&mut self, pair: Pair<Rule>) -> Result<()> {
         let this_pair = pair.into_inner().next().unwrap();
@@ -70,6 +110,7 @@ impl Assembler {
                     self.instructions.push(reserved_symbol);
                     return Ok(());
                 }
+
                 if self.labels.contains_key(label) {
                     self.instructions
                         .push(*self.labels.get(label).unwrap() as u16);
@@ -96,11 +137,12 @@ impl Assembler {
                 }
             } else {
                 // assume all undefined lables are variables
+                println!("Variable {} undefined", &label);
                 for index in indexes {
-                    println!("Variable {} => {}", &label, var_count);
+                    println!("{} => {}", index, var_count);
                     self.instructions[*index as usize] = var_count as u16;
-                    var_count += 1;
                 }
+                var_count += 1;
             }
         }
 
@@ -133,7 +175,7 @@ impl Assembler {
         }
 
         self.instructions.push(
-            0x8000
+            0xe000
                 | Self::generate_comp(comp) << 6
                 | Self::generate_dest(&dest) << 3
                 | Self::generate_jump(jump),
@@ -152,6 +194,9 @@ impl Assembler {
         }
         self.labels
             .insert(label.to_string(), self.instructions.len() as i64);
+        if label == "Sys.halt" {
+            self.halt_addr = self.instructions.len() as u16;
+        }
         Ok(())
     }
     fn generate_dest(dest: &str) -> u16 {

@@ -39,7 +39,7 @@ jump  =  { "JGT" | "JEQ" | "JGE" | "JLT" | "JNE" | "JLE" | "JMP" }
 a_inst     =  { "@" ~ (hex_num | int | label) }
 c_inst     =  { (dest ~ "=")? ~ comp ~ (";" ~ jump)? }
 l_inst     =  { "(" ~ label ~ ")" }
-comment    = _{ "//" ~ (!"\n" ~ ANY)* }
+comment    =  { "//" ~ (!"\n" ~ ANY)* }
 int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
 hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
 hex_num    =  { "0X" | "0x" ~ hex+ }

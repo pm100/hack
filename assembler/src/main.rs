@@ -17,11 +17,15 @@ struct Args {
     outfile: Option<PathBuf>,
     #[arg(short, long)]
     format: Option<String>,
+    #[arg(short, long)]
+    listing: Option<PathBuf>,
 }
 
 pub(crate) enum Format {
     RawBinary,
     RawHex,
+    Hackem,
+    Test,
 }
 
 fn main() -> Result<()> {
@@ -40,12 +44,18 @@ fn main() -> Result<()> {
         match fstr.as_str() {
             "binary" | "b" => Format::RawBinary,
             "hex" | "h" => Format::RawHex,
+            "hx" => Format::Hackem,
+            "test" => Format::Test,
             _ => bail!("Invalid format"),
         }
     } else {
         Format::RawBinary
     };
-
+    let listing = assembler.listing();
     assembler.output_code(&output_name, fmt)?;
+    if let Some(listing_path) = args.listing {
+        fs::write(listing_path, listing)?;
+    }
+    //  println!("{}", listing);
     Ok(())
 }
