@@ -15,6 +15,8 @@ pub struct Compiler {
     pub(crate) subroutine_symbols: SymbolTable,
     pub(crate) code: Vec<String>,
     pub(crate) subroutine_kind: SubroutineKind,
+    pub(crate) verbose: bool,
+    error: bool,
 }
 #[derive(PartialEq)]
 pub(crate) enum SubroutineKind {
@@ -23,19 +25,17 @@ pub(crate) enum SubroutineKind {
     Method,
     None,
 }
-impl Default for Compiler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(verbose: bool) -> Self {
         Self {
             class_name: String::new(),
             global_symbols: SymbolTable::new(),
             subroutine_symbols: SymbolTable::new(),
             code: Vec::new(),
             subroutine_kind: SubroutineKind::None,
+            verbose,
+            error: false,
         }
     }
     pub fn output_code(&mut self, output_name: &str) -> Result<()> {
@@ -45,7 +45,7 @@ impl Compiler {
         Ok(())
     }
 
-    pub fn run(&mut self, source: &str, _name: &str) -> Result<()> {
+    pub fn run(&mut self, source: &str, _name: &str) -> Result<bool> {
         let pairs = JackParser::parse(Rule::class_file, source)?;
         for pair in pairs {
             match pair.as_rule() {
@@ -59,14 +59,16 @@ impl Compiler {
                     self.do_subroutine(pair)?;
                 }
                 Rule::EOI => {
-                    println!("Global symbols");
-                    self.global_symbols.dump();
+                    if self.verbose {
+                        println!("Global symbols");
+                        self.global_symbols.dump();
+                    }
                 }
                 _ => {}
             }
         }
 
-        Ok(())
+        Ok(!self.error)
     }
     fn do_class_var(&mut self, pair: Pair<Rule>) -> Result<()> {
         let mut pair_iter = pair.into_inner();
@@ -103,10 +105,9 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
         let kind_str = pair_iter.next().unwrap().as_str();
-        let return_str = pair_iter.next().unwrap().as_str();
+        let _return_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
         let param_pair = pair_iter.next().unwrap();
-        println!("{} {} {}", kind_str, return_str, name_str);
 
         // what kind is it?
 
@@ -143,13 +144,15 @@ impl Compiler {
         let st_pair = pair_iter.next().unwrap();
         self.do_statments(st_pair);
         assert!(pair_iter.next().is_none());
-        self.subroutine_symbols.dump();
+        if self.verbose {
+            println!("Subroutine symbols");
+            self.subroutine_symbols.dump();
+        }
         Ok(())
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
         let pair_iter = pair.into_inner();
         for pair in pair_iter {
-            println!("{} => {:?}", pair.line_col().0, pair.as_str());
             match pair.as_rule() {
                 Rule::do_st => {
                     self.do_subcall(pair.into_inner().next().unwrap());
@@ -180,7 +183,7 @@ impl Compiler {
         match self.subroutine_kind {
             SubroutineKind::Constructor => {
                 let field_count = self.global_symbols.get_count(VarKind::Field);
-                self.global_symbols.dump();
+
                 self.write(&format!("push constant {}", field_count));
                 self.write("call Memory.alloc 1");
                 self.write("pop pointer 0");
@@ -194,7 +197,6 @@ impl Compiler {
         Ok(())
     }
     fn do_sub_var(&mut self, pair: Pair<Rule>, kind: VarKind) -> Result<()> {
-        println!("{} {:?}=> ", pair.as_str(), pair.as_rule());
         let mut pair_iter = pair.into_inner();
 
         let type_str = pair_iter.next().unwrap().as_str();
@@ -251,6 +253,7 @@ impl Compiler {
                     }
                 } else {
                     println!("Symbol {} not found", name);
+                    self.error = true;
                 }
             }
         }
@@ -266,7 +269,7 @@ impl Compiler {
         let lhs = pair_iter.next().unwrap();
 
         let name_str = lhs.as_str();
-        println!("lhs {:?} {}", lhs.as_rule(), lhs.as_str());
+
         let mut array = false;
 
         match lhs.as_rule() {
@@ -281,7 +284,7 @@ impl Compiler {
         // now the expression
 
         let expr = pair_iter.next().unwrap();
-        println!("rhs {:?} {}", expr.as_rule(), expr.as_str());
+
         self.do_expr(expr);
 
         // finally pop the value to the correct variable
@@ -339,8 +342,8 @@ impl Compiler {
     pub(crate) fn do_subcall(&mut self, pair: Pair<Rule>) {
         let mut pair_iter = pair.into_inner();
         // first is name
-        let name_pair = pair_iter.next().unwrap(); //.as_str().to_string();
-                                                   //println!("sub name {}", name);
+        let name_pair = pair_iter.next().unwrap();
+
         let name;
         let mut arg_count = 0;
         match name_pair.as_rule() {

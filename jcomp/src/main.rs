@@ -1,5 +1,5 @@
 use crate::compiler::Compiler;
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 pub mod compiler;
 //mod constants;
@@ -16,11 +16,13 @@ struct Args {
     input: PathBuf,
     #[arg(short, long)]
     outfile: Option<PathBuf>,
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
+    let verbose = args.verbose;
     let input_path = &args.input;
 
     let name = input_path.file_stem().unwrap().to_str().unwrap();
@@ -30,8 +32,11 @@ fn main() -> Result<()> {
     } else {
         format!("{}.vm", name)
     };
-    let mut compiler = Compiler::new();
-    compiler.run(&source, name)?;
-    compiler.output_code(&output_name)?;
+    let mut compiler = Compiler::new(verbose);
+    if compiler.run(&source, name)? {
+        compiler.output_code(&output_name)?;
+    } else {
+        bail!("No code generated");
+    }
     Ok(())
 }
