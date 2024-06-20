@@ -5,6 +5,7 @@ use std::fs;
 #[derive(pest_derive::Parser)]
 #[grammar = "vm.pest"]
 pub struct VMParser;
+#[allow(dead_code)]
 enum PushSource {
     Constant(i16),
     A,
@@ -23,6 +24,7 @@ pub struct VMComp {
     current_function: String,
     current_module: String,
 }
+
 impl VMComp {
     pub fn new() -> Self {
         Self {
@@ -191,7 +193,7 @@ impl VMComp {
                     self.write(&format!("({})", name));
                     self.current_function = name.to_string();
                     self.current_module =
-                        self.current_function.split(".").next().unwrap().to_string();
+                        self.current_function.split('.').next().unwrap().to_string();
                     for _ in 0..locals.parse::<u16>()? {
                         self.emit_push(PushSource::Constant(0));
                     }
@@ -213,7 +215,7 @@ impl VMComp {
         let mut pair_iter = pair.into_inner();
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
-        let index = u16::from_str_radix(index_str, 10)?;
+        let index = index_str.parse::<u16>()?;
         match segment.as_rule() {
             Rule::local => {
                 self.emit_load_ind_d(constants::LCL, index);
@@ -255,7 +257,7 @@ impl VMComp {
         let mut pair_iter = pair.into_inner();
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
-        let index = u16::from_str_radix(index_str, 10)?;
+        let index = index_str.parse::<u16>()?;
         match segment.as_rule() {
             Rule::local => {
                 self.pop_to_seg_off(constants::LCL, index);
@@ -329,35 +331,6 @@ impl VMComp {
         self.write("0;JMP");
         self.write(&format!("({})", return_label));
 
-        // self.emit_push(PushSource::A);
-        // self.write("@LCL");
-        // self.write("D=M");
-        // self.emit_push(PushSource::D);
-        // self.write("@ARG");
-        // self.write("D=M");
-        // self.emit_push(PushSource::D);
-        // self.write("@THIS");
-        // self.write("D=M");
-        // self.emit_push(PushSource::D);
-        // self.write("@THAT");
-        // self.write("D=M");
-        // self.emit_push(PushSource::D);
-        // self.write("@SP");
-        // self.write("D=M");
-        // self.write("@5");
-        // self.write("D=D-A");
-
-        // self.write(&format!("@{}", args));
-        // self.write("D=D-A");
-        // self.write("@ARG");
-        // self.write("M=D");
-        // self.write("@SP");
-        // self.write("D=M");
-        // self.write("@LCL");
-        // self.write("M=D");
-        // self.write(&format!("@{}", name));
-        // self.write("0;JMP");
-        // self.write(&format!("({})", return_label));
         Ok(())
     }
     fn return_st(&mut self) -> Result<()> {
@@ -365,65 +338,7 @@ impl VMComp {
         self.write("0;JMP");
         Ok(())
     }
-    // fn return_stx(&mut self) -> Result<()> {
-    //     self.write("@LCL");
-    //     self.write("D=M");
-    //     self.write("@R13"); // R13 = frame
-    //     self.write("M=D");
-    //     self.write("@5");
-    //     self.write("A=D-A");
-    //     self.write("D=M");
-    //     self.write("@R14");
-    //     self.write("M=D"); // retaddr
 
-    //     self.emit_dec_load_sp();
-    //     self.write("D=M");
-    //     self.write("@ARG");
-    //     self.write("A=M");
-    //     self.write("M=D");
-
-    //     self.write("@ARG");
-    //     self.write("D=M+1");
-    //     self.write("@SP");
-    //     self.write("M=D");
-
-    //     self.write("@R13");
-    //     self.write("D=M");
-    //     self.write("A=D-1");
-    //     self.write("D=M");
-    //     self.write("@THAT");
-    //     self.write("M=D");
-
-    //     self.write("@2");
-    //     self.write("D=A");
-    //     self.write("@R13");
-    //     self.write("A=M-D");
-    //     self.write("D=M");
-    //     self.write("@THIS");
-    //     self.write("M=D");
-
-    //     self.write("@3");
-    //     self.write("D=A");
-    //     self.write("@R13");
-    //     self.write("A=M-D");
-    //     self.write("D=M");
-    //     self.write("@ARG");
-    //     self.write("M=D");
-
-    //     self.write("@4");
-    //     self.write("D=A");
-    //     self.write("@R13");
-    //     self.write("A=M-D");
-    //     self.write("D=M");
-    //     self.write("@LCL");
-    //     self.write("M=D");
-
-    //     self.write("@R14");
-    //     self.write("A=M");
-    //     self.write("0;JMP");
-
-    //     Ok(())
-    // }
     fn make_label(&mut self) -> String {
         self.label_count += 1;
         format!("L_{}_{}", self.file_name, self.label_count)
