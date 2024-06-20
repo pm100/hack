@@ -50,6 +50,11 @@ impl VMComp {
 
         Ok(())
     }
+
+    // this code is emitted at the end of the file
+    // it has the huge common code for call and return
+    // call and return statments emit branches to this code
+
     pub fn emit_firmware(&mut self) -> Result<()> {
         // common return routine
 
@@ -273,7 +278,6 @@ impl VMComp {
                 self.pop_to_seg_off(constants::THAT, index);
             }
             Rule::temp => {
-                // self.pop_to_seg_off(constants::TEMP, index);
                 self.emit_dec_load_sp();
                 self.write("D=M");
                 self.write(&format!("@{}", constants::TEMP + index));
@@ -352,6 +356,8 @@ impl VMComp {
         self.emit_push(PushSource::D);
     }
     fn emit_dec_load_sp(&mut self) {
+        // heavily used common code
+        // pops stack and places address of tos in A
         self.write("@SP");
         self.write("M=M-1");
         self.write("A=M");
