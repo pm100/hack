@@ -125,26 +125,22 @@ impl Compiler {
             _ => self.do_term(first_term),
         }
 
-        loop {
-            if let Some(op) = pair_iter.next() {
-                println!("op {:?}", op.as_str());
-                let term = pair_iter.next().unwrap();
+        while let Some(op) = pair_iter.next() {
+            println!("op {:?}", op.as_str());
+            let term = pair_iter.next().unwrap();
 
-                self.do_term(term);
-                match op.as_str() {
-                    "+" => self.write("add"),
-                    "-" => self.write("sub"),
-                    "<" => self.write("lt"),
-                    ">" => self.write("gt"),
-                    "&" => self.write("and"),
-                    "|" => self.write("or"),
-                    "*" => self.mul(),
-                    "/" => self.div(),
-                    "=" => self.write("eq"),
-                    _ => unreachable!(),
-                }
-            } else {
-                break;
+            self.do_term(term);
+            match op.as_str() {
+                "+" => self.write("add"),
+                "-" => self.write("sub"),
+                "<" => self.write("lt"),
+                ">" => self.write("gt"),
+                "&" => self.write("and"),
+                "|" => self.write("or"),
+                "*" => self.mul(),
+                "/" => self.div(),
+                "=" => self.write("eq"),
+                _ => unreachable!(),
             }
         }
     }

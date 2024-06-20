@@ -3,8 +3,6 @@ use std::fs;
 use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 
-use crate::symbols::Symbol;
-
 use super::symbols::{SymbolTable, VarKind, VarType};
 
 #[derive(pest_derive::Parser)]
@@ -24,6 +22,11 @@ pub(crate) enum SubroutineKind {
     Function,
     Method,
     None,
+}
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 impl Compiler {
     pub fn new() -> Self {
@@ -81,17 +84,14 @@ impl Compiler {
             "boolean" => VarType::Bool,
             _ => VarType::Instance(type_str.to_string()),
         };
-        loop {
-            if let Some(name_str) = pair_iter.next() {
-                self.global_symbols.insert(
-                    name_str.as_str().to_string(),
-                    vtype.clone(),
-                    kind.clone(),
-                )?;
-            } else {
-                break;
-            }
+        for name_str in pair_iter {
+            self.global_symbols.insert(
+                name_str.as_str().to_string(),
+                vtype.clone(),
+                kind.clone(),
+            )?;
         }
+
         Ok(())
     }
     pub(crate) fn write(&mut self, line: &str) {
@@ -367,17 +367,13 @@ impl Compiler {
                     if let Some(symbol) = self.subroutine_symbols.get(&left) {
                         Some(symbol.clone())
                     } else {
-                        if let Some(symbol) = self.global_symbols.get(&left) {
-                            Some(symbol.clone())
-                        } else {
-                            None
-                        }
+                        self.global_symbols.get(&left).cloned()
                     }
                 };
                 let cl = if let Some(ref symbol) = sym {
                     match &symbol.var_type {
                         VarType::Instance(cl) => {
-                            self.push_symbol(&symbol);
+                            self.push_symbol(symbol);
                             arg_count += 1;
                             cl
                         }

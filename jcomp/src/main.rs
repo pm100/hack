@@ -2,7 +2,7 @@ use crate::compiler::Compiler;
 use anyhow::Result;
 
 pub mod compiler;
-mod constants;
+//mod constants;
 mod expression;
 mod symbols;
 

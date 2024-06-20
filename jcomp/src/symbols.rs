@@ -16,7 +16,6 @@ pub enum VarKind {
 }
 #[derive(Debug, Clone)]
 pub struct Symbol {
-    pub(crate) name: String,
     pub(crate) var_type: VarType,
     pub(crate) var_kind: VarKind,
     pub(crate) number: i32,
@@ -47,7 +46,6 @@ impl SymbolTable {
             .filter(|(_, symbol)| symbol.var_kind == var_kind)
             .count() as i32;
         let symbol = Symbol {
-            name: name.clone(),
             var_type,
             var_kind,
             number,
