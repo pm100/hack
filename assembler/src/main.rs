@@ -1,12 +1,19 @@
+/*
+   Assembler for nand to tertis tool chain
+
+   compiles a single file
+   optinally produces a listing file
+*/
+
 use anyhow::{bail, Result};
-use assembler::Assembler;
 use clap::Parser;
 use clap_derive::Parser;
+use std::{fs, path::PathBuf};
 
 mod assembler;
 mod constants;
 
-use std::{fs, path::PathBuf};
+use assembler::Assembler;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -19,8 +26,14 @@ struct Args {
     format: Option<String>,
     #[arg(short, long)]
     listing: Option<PathBuf>,
+    #[arg(short, long)]
+    verbose: bool,
 }
-
+// output formats
+// - Raw biniary is the original toolkits output
+// - Raw hex is the original toolkits output in hex
+// - Hackem is the format used by my hack emulator
+// - Test is for the use in unit tests
 pub(crate) enum Format {
     RawBinary,
     RawHex,
@@ -31,7 +44,7 @@ pub(crate) enum Format {
 fn main() -> Result<()> {
     let args = Args::parse();
     let name = args.input.file_stem().unwrap().to_str().unwrap();
-
+    let verbose = args.verbose;
     let output_name = if let Some(outfile) = args.outfile {
         outfile.to_str().unwrap().to_string()
     } else {
@@ -39,7 +52,7 @@ fn main() -> Result<()> {
     };
     let mut assembler = Assembler::new();
     let source = fs::read_to_string(&args.input)?;
-    assembler.run(&source, name)?;
+    assembler.run(&source, name, verbose)?;
     let fmt = if let Some(fstr) = args.format {
         match fstr.as_str() {
             "binary" | "b" => Format::RawBinary,
@@ -56,6 +69,6 @@ fn main() -> Result<()> {
     if let Some(listing_path) = args.listing {
         fs::write(listing_path, listing)?;
     }
-    //  println!("{}", listing);
+
     Ok(())
 }

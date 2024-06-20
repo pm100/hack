@@ -12,25 +12,33 @@ pub struct Assembler {
     labels: HashMap<String, i64>,
     instructions: Vec<u16>,
     forward_references: BTreeMap<String, Vec<isize>>,
-    lines: Vec<(String, usize)>,
+    lines: Vec<(String, Option<u16>)>,
     halt_addr: u16,
+    generated_inst_addr: Option<u16>,
+    verbose: bool,
 }
 
 impl Assembler {
     pub fn new() -> Assembler {
         Self {
-            // variables: HashMap::new(),
             labels: HashMap::new(),
             instructions: Vec::new(),
             forward_references: BTreeMap::new(),
             lines: Vec::new(),
             halt_addr: 0,
+            generated_inst_addr: None,
+            verbose: false,
         }
     }
-    pub fn run(&mut self, source: &str, _name: &str) -> Result<()> {
+    pub fn run(&mut self, source: &str, _name: &str, verbose: bool) -> Result<()> {
+        self.verbose = verbose;
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
-            let line = pair.clone();
+            self.generated_inst_addr = None;
+            let line = pair.clone().as_str().trim().trim_matches('\"');
+            if verbose {
+                println!("          {}", line);
+            }
             match pair.as_rule() {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
@@ -42,85 +50,108 @@ impl Assembler {
                 }
             }
             self.lines
-                .push((line.as_str().to_string(), self.instructions.len() - 1))
+                .push((line.to_string(), self.generated_inst_addr));
         }
 
         Ok(())
     }
 
     pub fn output_code(self, output_name: &str, format: Format) -> Result<()> {
+        let mut ofile = fs::File::create(output_name)?;
+        if self.verbose {
+            println!(
+                "Writing file {}, format {}",
+                output_name,
+                match format {
+                    Format::Hackem => "hackem",
+                    Format::RawBinary => "binary",
+                    Format::RawHex => "hex",
+                    Format::Test => "test",
+                }
+            );
+        }
         match format {
+            // hackem format
+            //  - hackem v1.0 0xhhhh
+            // where hhhh is the address of the sys.halt call
+            //  - ROM@aaaa
+            // or
+            //  - RAM@aaaa
+            // where aaa is the start address of a block of code
+            // to be loaded into ROM or RAM respectively
             Format::Hackem => {
-                let mut ofile = fs::File::create(output_name)?;
-                writeln!(ofile, "hackem v1.0 0x{0:4x}", self.halt_addr)?; // write header (required by hackem)
+                writeln!(ofile, "hackem v1.0 0x{0:4x}", self.halt_addr)?;
                 writeln!(ofile, "ROM@0000")?;
                 for line in self.instructions.iter() {
                     writeln!(ofile, "{:04x}", line)?;
                 }
             }
             Format::Test => {
-                let mut ofile = fs::File::create(output_name)?;
-                let mut off = 0;
-                for line in self.instructions.iter() {
+                for (off, line) in self.instructions.iter().enumerate() {
                     writeln!(ofile, " cpu.rom[{}]=0x{:04x};", off, line)?;
-                    off += 1;
                 }
             }
             Format::RawBinary | Format::RawHex => {
-                let code = self
-                    .instructions
-                    .iter()
-                    .map(|x| match format {
-                        Format::RawBinary => format!("{:016b}", *x),
-                        Format::RawHex => format!("{:04x}", *x),
-                        _ => unreachable!("Invalid format"),
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n");
-                println!("writing to file {}", output_name);
-                fs::write(output_name, code).expect("Unable to write file");
+                for line in self.instructions.iter() {
+                    match format {
+                        Format::RawBinary => writeln!(ofile, "{:016b}", line)?,
+                        Format::RawHex => writeln!(ofile, "{:04x}", line)?,
+                        _ => unreachable!(),
+                    }
+                }
             }
         }
         Ok(())
     }
     pub fn listing(&self) -> String {
-        let mut ret = String::new();
-        for (line, addr) in self.lines.iter() {
-            ret.push_str(&format!(
-                "0x{:04x} ({:5})   0x{:04x}     {}\n",
-                addr, addr, self.instructions[*addr], line
-            ));
+        let mut out = Vec::new();
+        for (ref line, ref inst_addr) in &self.lines {
+            if let Some(addr) = inst_addr {
+                out.push(format!(
+                    "0x{:04x} ({:04}) 0x{:04x}  {}",
+                    addr, addr, self.instructions[*addr as usize], line
+                ));
+            } else {
+                out.push(format!("{:>22}{}", "", line));
+            }
         }
-        ret
+        out.join("\n")
+    }
+
+    fn gen_inst(&mut self, inst: u16) {
+        self.instructions.push(inst);
+        self.generated_inst_addr = Some(self.instructions.len() as u16 - 1);
     }
     fn parse_a(&mut self, pair: Pair<Rule>) -> Result<()> {
         let this_pair = pair.into_inner().next().unwrap();
         match this_pair.as_rule() {
             Rule::int => {
                 let num = this_pair.as_str().parse::<i64>().context("bad num")?;
-                self.instructions.push(num as u16);
+                self.gen_inst(num as u16);
             }
             Rule::hex_num => {
                 let num = i64::from_str_radix(&this_pair.as_str()[2..], 16).context("bad num")?;
-                self.instructions.push(num as u16);
+                self.gen_inst(num as u16);
             }
             Rule::label => {
                 let label = this_pair.as_str();
                 if let Some(reserved_symbol) = Self::lookup_symbol(label) {
-                    self.instructions.push(reserved_symbol);
+                    self.gen_inst(reserved_symbol);
                     return Ok(());
                 }
 
                 if self.labels.contains_key(label) {
-                    self.instructions
-                        .push(*self.labels.get(label).unwrap() as u16);
+                    self.gen_inst(*self.labels.get(label).unwrap() as u16);
                 } else {
+                    if self.verbose {
+                        println!("Forward reference to {}", label);
+                    }
                     let fref = self
                         .forward_references
                         .entry(label.to_string())
                         .or_default();
                     fref.push(self.instructions.len() as isize);
-                    self.instructions.push(0);
+                    self.gen_inst(0);
                 }
             }
             _ => unreachable!(),
@@ -130,22 +161,36 @@ impl Assembler {
 
     fn complete(&mut self) -> Result<()> {
         let mut var_count = 16;
+        if self.verbose {
+            println!("----Fixup---------");
+        }
         for (label, indexes) in self.forward_references.iter() {
+            if self.verbose {
+                println!("Resolving forward references to {} ", label);
+            }
+
             if let Some(addr) = self.labels.get(label) {
                 for index in indexes {
+                    if self.verbose {
+                        println!("{} => {}", index, addr);
+                    }
                     self.instructions[*index as usize] = *addr as u16;
                 }
             } else {
                 // assume all undefined lables are variables
-                println!("Variable {} undefined", &label);
+                if self.verbose {
+                    println!("Label {} undefined, assuming its a variable", &label);
+                }
                 for index in indexes {
-                    println!("{} => {}", index, var_count);
+                    if self.verbose {
+                        println!("{} => {}", index, var_count);
+                    }
                     self.instructions[*index as usize] = var_count as u16;
                 }
                 var_count += 1;
             }
         }
-
+        println!();
         Ok(())
     }
     fn parse_c(&mut self, pair: Pair<Rule>) -> Result<()> {
@@ -174,7 +219,7 @@ impl Assembler {
             jump = "";
         }
 
-        self.instructions.push(
+        self.gen_inst(
             0xe000
                 | Self::generate_comp(comp) << 6
                 | Self::generate_dest(&dest) << 3
