@@ -8,13 +8,15 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/hack.exe",
+            "program": "${workspaceFolder}/target/debug/linker.exe",
             "args": [
                 "-i",
-                ".\\hello_world\\hello_world.asm"
+                ".",
+                "--lib",
+                "C:\\work\\hack\\os\\"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "c:\\work\\hackem\\math_test",
             "environment": [],
             "console": "externalTerminal"
         }

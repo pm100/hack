@@ -80,7 +80,7 @@ impl Assembler {
             // where aaa is the start address of a block of code
             // to be loaded into ROM or RAM respectively
             Format::Hackem => {
-                writeln!(ofile, "hackem v1.0 0x{0:4x}", self.halt_addr)?;
+                writeln!(ofile, "hackem v1.0 0x{:04x}", self.halt_addr)?;
                 writeln!(ofile, "ROM@0000")?;
                 for line in self.instructions.iter() {
                     writeln!(ofile, "{:04x}", line)?;
