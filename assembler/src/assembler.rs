@@ -190,7 +190,7 @@ impl Assembler {
                 var_count += 1;
             }
         }
-        println!();
+
         Ok(())
     }
     fn parse_c(&mut self, pair: Pair<Rule>) -> Result<()> {

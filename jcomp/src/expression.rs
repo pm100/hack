@@ -42,7 +42,7 @@ impl Compiler {
         // term is an integer constant, string constant, keyword constant, var name, array entry, or subroutine call
         // or an expression in parentheses
 
-        println!("term {:?} {:?}", term.as_str(), term.as_rule());
+        //println!("term {:?} {:?}", term.as_str(), term.as_rule());
         match term.as_rule() {
             Rule::int => {
                 let val = term.as_str().trim().parse::<i32>().unwrap();
@@ -63,7 +63,7 @@ impl Compiler {
             Rule::array_var => {
                 let mut array_var_iter = term.into_inner();
                 let name = array_var_iter.next().unwrap().as_str();
-                println!("array_var {}", name);
+                //println!("array_var {}", name);
                 self.lookup_push_symbol(name);
                 let index = array_var_iter.next().unwrap();
                 self.do_expr(index);
@@ -111,7 +111,7 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         let first_term = pair_iter.next().unwrap();
 
-        println!("ft {:?} {:?}", first_term.as_str(), first_term.as_rule());
+        //println!("ft {:?} {:?}", first_term.as_str(), first_term.as_rule());
         match first_term.as_rule() {
             Rule::unary_op => {
                 let term = pair_iter.next().unwrap();
@@ -126,7 +126,7 @@ impl Compiler {
         }
 
         while let Some(op) = pair_iter.next() {
-            println!("op {:?}", op.as_str());
+            //println!("op {:?}", op.as_str());
             let term = pair_iter.next().unwrap();
 
             self.do_term(term);
@@ -148,7 +148,6 @@ impl Compiler {
         self.write("call Math.divide 2");
     }
     fn mul(&mut self) {
-        println!("mul");
         self.write("call Math.multiply 2");
     }
 }
