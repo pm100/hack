@@ -16,13 +16,19 @@ enum Comparison {
     Lt,
     Gt,
 }
-
+#[derive(Clone)]
+struct Push {
+    segment: Rule,
+    index: u16,
+    offset: usize,
+}
 pub struct VMComp {
     code: Vec<String>,
     file_name: String,
     label_count: i32,
     current_function: String,
     current_module: String,
+    last_push: Option<Push>,
 }
 
 impl VMComp {
@@ -33,6 +39,7 @@ impl VMComp {
             label_count: 0,
             current_function: String::new(),
             current_module: String::new(),
+            last_push: None,
         }
     }
     pub fn output_code(&self, output_name: &str) -> Result<()> {
@@ -161,12 +168,29 @@ impl VMComp {
         let pairs = VMParser::parse(Rule::program, source)?;
         for pair in pairs {
             // insert original source line as comment
-            self.write(&format!("// {}", pair.as_str()));
+            let source_line = pair.as_str();
+            self.write(&format!("// {}", source_line));
+            if pair.as_rule() != Rule::pop_st && pair.as_rule() != Rule::add_st {
+                self.last_push = None;
+            }
 
             match pair.as_rule() {
                 Rule::push_st => self.push(pair)?,
-                Rule::pop_st => self.pop(pair)?,
-                Rule::add_st => self.emit_op("+"),
+                Rule::pop_st => self.pop(pair, &source_line)?,
+                Rule::add_st => {
+                    if let Some(ref push) = self.last_push {
+                        if push.segment == Rule::constant {
+                            self.fast_add_const(push.index as u16, &source_line)?;
+                            //self.emit_op("+");
+                            println!("pushc add @ {}", self.code.len());
+                        } else {
+                            self.emit_op("+");
+                        }
+                    } else {
+                        self.emit_op("+");
+                    }
+                    self.last_push = None;
+                }
                 Rule::sub_st => self.emit_op("-"),
                 Rule::and_st => self.emit_op("&"),
                 Rule::or_st => self.emit_op("|"),
@@ -221,6 +245,11 @@ impl VMComp {
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
         let index = index_str.parse::<u16>()?;
+        self.last_push = Some(Push {
+            segment: segment.as_rule(),
+            index,
+            offset: self.code.len(),
+        });
         match segment.as_rule() {
             Rule::local => {
                 self.emit_load_ind_d(constants::LCL, index);
@@ -258,11 +287,17 @@ impl VMComp {
 
         Ok(())
     }
-    fn pop(&mut self, pair: Pair<Rule>) -> Result<()> {
+    fn pop(&mut self, pair: Pair<Rule>, line: &str) -> Result<()> {
         let mut pair_iter = pair.into_inner();
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
         let index = index_str.parse::<u16>()?;
+
+        if self.last_push.is_some() {
+            self.fast_push_pop(&segment.as_rule(), index, line)?;
+            return Ok(());
+        }
+
         match segment.as_rule() {
             Rule::local => {
                 self.pop_to_seg_off(constants::LCL, index);
@@ -301,6 +336,105 @@ impl VMComp {
             }
         }
 
+        Ok(())
+    }
+    fn fast_add_const(&mut self, value: u16, source_line: &str) -> Result<()> {
+        // optimization of
+        // push constant x
+        // add
+        // this is the push we just generated
+        let push = self.last_push.as_ref().unwrap().clone();
+        // first remove the original push code
+        self.code.truncate(push.offset);
+        // now fast code
+        self.write(&format!("@{}", value));
+        self.write("D=A");
+        self.write(&format!("// {}", source_line));
+        self.write("@SP");
+        self.write("A=M-1");
+        self.write("M=D+M");
+        self.last_push = None;
+        Ok(())
+    }
+    fn fast_push_pop(&mut self, pop_segment: &Rule, pop_index: u16, line: &str) -> Result<()> {
+        // this is an optimization step. If a push is followed by a pop then do not use the stack
+        // do a transfer from the source to the destination
+        // this is a common pattern in the generated code
+        // it is not a general optimization
+
+        // this is the push we just generated
+        let push = self.last_push.as_ref().unwrap().clone();
+
+        // first remove the original push code
+        self.code.truncate(push.offset);
+
+        // emit code to get value to push into D
+        match push.segment {
+            Rule::local => {
+                self.emit_load_ind_d(constants::LCL, push.index);
+            }
+            Rule::constant => {
+                self.write(&format!("@{}", push.index));
+                self.write("D=A");
+            }
+            Rule::argument => {
+                self.emit_load_ind_d(constants::ARG, push.index);
+            }
+            Rule::this => self.emit_load_this_that(push.index, "THIS"),
+            Rule::that => self.emit_load_this_that(push.index, "THAT"),
+            Rule::temp => {
+                self.write(&format!("@{}", constants::TEMP + push.index));
+                self.write("D=M");
+            }
+            Rule::pointer => {
+                self.write(&format!("@{}", constants::POINTER + push.index));
+                self.write("D=M");
+            }
+            Rule::static_seg => {
+                self.write(&format!("@{}.{}", self.current_module, push.index));
+                self.write("D=M");
+            }
+
+            _ => {
+                unreachable!("Unknown segment");
+            }
+        }
+        // truncate just deleted this comment :-( so put it back
+        self.write(&format!("// {}", line));
+        // now load d into the destination
+        match pop_segment {
+            Rule::local => {
+                self.d_to_seg_off(constants::LCL, pop_index);
+            }
+
+            Rule::argument => {
+                self.d_to_seg_off(constants::ARG, pop_index);
+            }
+            Rule::this => {
+                self.d_to_seg_off(constants::THIS, pop_index);
+            }
+            Rule::that => {
+                self.d_to_seg_off(constants::THAT, pop_index);
+            }
+            Rule::temp => {
+                self.write(&format!("@{}", constants::TEMP + pop_index));
+                self.write("M=D");
+            }
+            Rule::pointer => {
+                self.write(&format!("@{}", constants::POINTER + pop_index));
+                self.write("M=D");
+            }
+            Rule::static_seg => {
+                self.write(&format!("@{}.{}", self.current_module, pop_index));
+                self.write("M=D");
+            }
+
+            _ => {
+                unreachable!("Unknown segment");
+            }
+        }
+
+        self.last_push = None;
         Ok(())
     }
 
@@ -348,12 +482,16 @@ impl VMComp {
         format!("L_{}_{}", self.file_name, self.label_count)
     }
     fn emit_push_this_that(&mut self, index: u16, this_that: &str) {
+        self.emit_load_this_that(index, this_that);
+        self.emit_push(PushSource::D);
+    }
+
+    fn emit_load_this_that(&mut self, index: u16, this_that: &str) {
         self.write(&format!("@{}", this_that));
         self.write("D=M");
         self.write(&format!("@{}", index));
         self.write("A=D+A");
         self.write("D=M");
-        self.emit_push(PushSource::D);
     }
     fn emit_dec_load_sp(&mut self) {
         // heavily used common code
@@ -463,6 +601,30 @@ impl VMComp {
         self.write("@SP");
         self.write("M=M-1");
         self.write("A=M");
+        self.write("D=M");
+        //store at *R13
+        self.write("@R13");
+        self.write("A=M");
+        self.write("M=D");
+    }
+    fn d_to_seg_off(&mut self, seg: u16, offset: u16) {
+        self.write("@R14");
+        self.write("M=D");
+        // R13 = *seg + offset
+        // D= *SP--
+        // *R13 = D
+
+        // calculate target address
+        self.write(&format!("@{}", seg));
+        //self.write("A=M");
+        self.write("D=M");
+        self.write(&format!("@{}", offset));
+        self.write("D=D+A");
+        // store in R13
+        self.write("@R13");
+        self.write("M=D");
+        // pop to D
+        self.write("@R14");
         self.write("D=M");
         //store at *R13
         self.write("@R13");
