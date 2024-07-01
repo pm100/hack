@@ -9,7 +9,7 @@ pub mod jcomp {
 }
 
 pub mod vcomp {
-    pub mod constants;
+    //pub mod constants;
     pub mod vmcomp;
 }
 

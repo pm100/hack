@@ -5,7 +5,7 @@ use common::pdb::database::Pdb;
 // mod expression;
 // mod symbols;
 use clap::Parser;
-use clap_derive::Parser;
+use clap_derive::{Parser, ValueEnum};
 use compcore::{
     assembler::assembler::{Assembler, Format},
     jcomp::compiler::Compiler,
@@ -31,17 +31,56 @@ struct Args {
     listing: Option<PathBuf>,
     #[arg(long)]
     oslib: Option<PathBuf>,
+    #[arg(short, long, value_enum)]
+    mode: Option<Mode>,
+}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+enum Mode {
+    Jack,
+    Vm,
+    Link,
+    Asm,
+    // All,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let verbose = args.verbose;
     let input_path = &args.input;
+    if let Some(mode) = args.mode {
+        let name = input_path.file_stem().unwrap().to_str().unwrap();
+        match mode {
+            Mode::Jack => {
+                let source = fs::read_to_string(input_path.clone())?;
 
-    build_all_jack(verbose, input_path)?;
-    let linked_vm = link_all_vm(verbose, input_path, &args.oslib)?;
-    let compiled_vm = compile_linked_vm(verbose, &linked_vm)?;
-    assemble(verbose, &compiled_vm, args.format, args.listing)?;
+                let mut compiler = Compiler::new(verbose);
+                if compiler.run(&source, name, &input_path)? {
+                    compiler.output_code(&format!("{}.vm", name))?;
+                } else {
+                    bail!("No code generated");
+                }
+            }
+            Mode::Vm => {
+                let source = fs::read_to_string(input_path)?;
+                let output_name = format!("{}.asm", name);
+
+                let mut vmcompiler = VMComp::new();
+                vmcompiler.bootstrap()?;
+                vmcompiler.run(&source, name)?;
+                vmcompiler.emit_firmware()?;
+                vmcompiler.output_code(&output_name)?;
+            }
+            Mode::Link => {
+                link_all_vm(verbose, input_path, &args.oslib)?;
+            }
+            Mode::Asm => assemble(verbose, input_path, args.format, args.listing)?,
+        }
+    } else {
+        build_all_jack(verbose, input_path)?;
+        let linked_vm = link_all_vm(verbose, input_path, &args.oslib)?;
+        let compiled_vm = compile_linked_vm(verbose, &linked_vm)?;
+        assemble(verbose, &compiled_vm, args.format, args.listing)?;
+    };
 
     Ok(())
 }
@@ -131,25 +170,18 @@ fn build_all_jack(verbose: bool, input_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 fn compile_linked_vm(verbose: bool, input_path: &PathBuf) -> Result<PathBuf> {
-    // either compiles one file or a directory of files
-
     let name = input_path
         .file_stem()
         .ok_or(anyhow!("bad path"))?
         .to_str()
         .ok_or(anyhow!("bad path"))?;
 
-    // output file defaults to input file name with .asm extension
-    // for a single file or <dirname>.asm for a directory
-
     let output_name = format!("{}.asm", name);
 
     let mut vmcompiler = VMComp::new();
 
-    // single file
     let source = fs::read_to_string(input_path)?;
     vmcompiler.bootstrap()?;
-
     vmcompiler.run(&source, name)?;
     vmcompiler.emit_firmware()?;
     vmcompiler.output_code(&output_name)?;
