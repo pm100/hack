@@ -1,5 +1,5 @@
 [package]
-name = "jcomp"
+name = "compcore"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,10 +7,8 @@ edition = "2021"
 
 [dependencies]
 common ={path = "../common"}
-compcore ={path = "../compcore"}
 anyhow ={workspace=true}
-clap  ={workspace=true}
-clap_derive ={workspace=true}
+
 pest ={workspace=true}
 pest_derive ={workspace=true}
 

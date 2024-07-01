@@ -1,12 +1,13 @@
-use std::fs;
-
-use anyhow::Result;
-use pest::{iterators::Pair, Parser};
+use std::{fs, path::PathBuf};
 
 use super::symbols::{SymbolTable, VarKind, VarType};
+use anyhow::Result;
+use common::pdb::database::{CompilerData, Pdb};
+use pest::{iterators::Pair, Parser};
+use std::path::Path;
 
 #[derive(pest_derive::Parser)]
-#[grammar = "jack.pest"]
+#[grammar = "jcomp/jack.pest"]
 pub struct JackParser;
 
 pub struct Compiler {
@@ -16,7 +17,11 @@ pub struct Compiler {
     pub(crate) code: Vec<String>,
     pub(crate) subroutine_kind: SubroutineKind,
     pub(crate) verbose: bool,
+    file_name: String,
+    //pdb: Pdb,
     error: bool,
+    pdb_data: CompilerData,
+    current_function_name: String,
 }
 #[derive(PartialEq)]
 pub(crate) enum SubroutineKind {
@@ -26,6 +31,22 @@ pub(crate) enum SubroutineKind {
     None,
 }
 
+// https://stackoverflow.com/questions/50322817/how-do-i-remove-the-prefix-from-a-canonical-windows-path
+#[cfg(not(target_os = "windows"))]
+fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
+    p.as_ref().display().to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
+    const VERBATIM_PREFIX: &str = r#"\\?\"#;
+    let p = p.as_ref().display().to_string();
+    if p.starts_with(VERBATIM_PREFIX) {
+        p[VERBATIM_PREFIX.len()..].to_string()
+    } else {
+        p
+    }
+}
 impl Compiler {
     pub fn new(verbose: bool) -> Self {
         Self {
@@ -36,17 +57,27 @@ impl Compiler {
             subroutine_kind: SubroutineKind::None,
             verbose,
             error: false,
+
+            file_name: String::new(),
+            pdb_data: CompilerData::new(),
+            current_function_name: String::new(),
         }
     }
     pub fn output_code(&mut self, output_name: &str) -> Result<()> {
         self.code.push("\n".to_string());
         let code = self.code.join("\n");
         fs::write(output_name, code).expect("Unable to write file");
+        self.generate_debug_symbols(true);
+        // self.pdb.load_jcomp(&self.pdb_data)?;
         Ok(())
     }
 
-    pub fn run(&mut self, source: &str, _name: &str) -> Result<bool> {
+    pub fn run(&mut self, source: &str, name: &str, path: &PathBuf) -> Result<bool> {
         let pairs = JackParser::parse(Rule::class_file, source)?;
+
+        let canon = path.canonicalize().unwrap();
+        self.file_name = adjust_canonicalization(canon);
+
         for pair in pairs {
             match pair.as_rule() {
                 Rule::class_name => {
@@ -108,6 +139,7 @@ impl Compiler {
         let _return_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
         let param_pair = pair_iter.next().unwrap();
+        self.current_function_name = name_str.to_string();
 
         // what kind is it?
 
@@ -117,6 +149,7 @@ impl Compiler {
             "function" => self.subroutine_kind = SubroutineKind::Function,
             _ => unreachable!(),
         }
+        self.pdb_data.add_func(name_str.to_string());
 
         // methods get 'this' as arg0
 
@@ -148,11 +181,42 @@ impl Compiler {
             println!("Subroutine symbols");
             self.subroutine_symbols.dump();
         }
+        self.generate_debug_symbols(false);
         Ok(())
+    }
+    fn generate_debug_symbols(&mut self, global: bool) {
+        let table = if global {
+            &self.global_symbols.table
+        } else {
+            &self.subroutine_symbols.table
+        };
+        for (name, symbol) in table {
+            let storage_class = match symbol.var_kind {
+                VarKind::Local => 1,
+                VarKind::Field => 2,
+                VarKind::Static => 3,
+                VarKind::Argument => 4,
+            };
+            let var_type = match &symbol.var_type {
+                VarType::Int => 1,
+                VarType::Char => 2,
+                VarType::Bool => 3,
+                VarType::Instance(_) => 4,
+            };
+            let full_name = format!("{}.{}", self.class_name, name);
+            self.pdb_data
+                .add_var(&full_name, storage_class, var_type, 4, symbol.number as i64);
+        }
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
         let pair_iter = pair.into_inner();
         for pair in pair_iter {
+            self.write(&format!(
+                "// ++pdb {}:{}:{}",
+                self.file_name,
+                pair.line_col().0,
+                pair.line_col().1
+            ));
             match pair.as_rule() {
                 Rule::do_st => {
                     self.do_subcall(pair.into_inner().next().unwrap());
@@ -170,11 +234,13 @@ impl Compiler {
         }
     }
     fn do_variables(&mut self, pair: Pair<Rule>, name: &str) -> Result<()> {
+        let p = pair.clone();
         let pair_iter = pair.into_inner();
 
         for pair in pair_iter {
             self.do_sub_var(pair, VarKind::Local)?;
         }
+
         let local_count = self.subroutine_symbols.get_count(VarKind::Local);
         self.write(&format!(
             "function {}.{} {}",
@@ -183,12 +249,23 @@ impl Compiler {
         match self.subroutine_kind {
             SubroutineKind::Constructor => {
                 let field_count = self.global_symbols.get_count(VarKind::Field);
-
+                self.write(&format!(
+                    "// ++pdb {}:{}:{}",
+                    self.file_name,
+                    p.line_col().0,
+                    p.line_col().1
+                ));
                 self.write(&format!("push constant {}", field_count));
                 self.write("call Memory.alloc 1");
                 self.write("pop pointer 0");
             }
             SubroutineKind::Method => {
+                self.write(&format!(
+                    "// ++pdb {}:{}:{}",
+                    self.file_name,
+                    p.line_col().0,
+                    p.line_col().1
+                ));
                 self.write("push argument 0");
                 self.write("pop pointer 0");
             }

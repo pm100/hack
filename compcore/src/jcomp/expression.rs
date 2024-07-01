@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{
+use super::{
     compiler::{Compiler, Rule},
     symbols::{Symbol, VarKind},
 };

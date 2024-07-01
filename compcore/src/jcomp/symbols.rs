@@ -21,7 +21,7 @@ pub struct Symbol {
     pub(crate) number: i32,
 }
 pub(crate) struct SymbolTable {
-    table: HashMap<String, Symbol>,
+    pub(crate) table: HashMap<String, Symbol>,
 }
 
 impl SymbolTable {
