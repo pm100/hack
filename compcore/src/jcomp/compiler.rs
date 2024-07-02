@@ -2,7 +2,10 @@ use std::{fs, path::PathBuf};
 
 use super::symbols::{SymbolTable, VarKind, VarType};
 use anyhow::Result;
-use common::pdb::database::{CompilerData, Pdb};
+use common::{
+    pdb::database::{CompilerData, FileInfo, FileType, Pdb, VarSym},
+    utils::adjust_canonicalization,
+};
 use pest::{iterators::Pair, Parser};
 use std::path::Path;
 
@@ -10,7 +13,7 @@ use std::path::Path;
 #[grammar = "jcomp/jack.pest"]
 pub struct JackParser;
 
-pub struct Compiler {
+pub struct Compiler<'pdb> {
     pub(crate) class_name: String,
     pub(crate) global_symbols: SymbolTable,
     pub(crate) subroutine_symbols: SymbolTable,
@@ -18,9 +21,9 @@ pub struct Compiler {
     pub(crate) subroutine_kind: SubroutineKind,
     pub(crate) verbose: bool,
     file_name: String,
-    //pdb: Pdb,
+    file_number: usize,
     error: bool,
-    pdb_data: CompilerData,
+    pdb: &'pdb mut Pdb,
     current_function_name: String,
 }
 #[derive(PartialEq)]
@@ -31,24 +34,8 @@ pub(crate) enum SubroutineKind {
     None,
 }
 
-// https://stackoverflow.com/questions/50322817/how-do-i-remove-the-prefix-from-a-canonical-windows-path
-#[cfg(not(target_os = "windows"))]
-fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
-    p.as_ref().display().to_string()
-}
-
-#[cfg(target_os = "windows")]
-fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
-    const VERBATIM_PREFIX: &str = r#"\\?\"#;
-    let p = p.as_ref().display().to_string();
-    if p.starts_with(VERBATIM_PREFIX) {
-        p[VERBATIM_PREFIX.len()..].to_string()
-    } else {
-        p
-    }
-}
-impl Compiler {
-    pub fn new(verbose: bool) -> Self {
+impl<'pdb> Compiler<'pdb> {
+    pub fn new(verbose: bool, pdb: &'pdb mut Pdb) -> Self {
         Self {
             class_name: String::new(),
             global_symbols: SymbolTable::new(),
@@ -57,9 +44,9 @@ impl Compiler {
             subroutine_kind: SubroutineKind::None,
             verbose,
             error: false,
-
+            file_number: 0,
             file_name: String::new(),
-            pdb_data: CompilerData::new(),
+            pdb,
             current_function_name: String::new(),
         }
     }
@@ -68,15 +55,20 @@ impl Compiler {
         let code = self.code.join("\n");
         fs::write(output_name, code).expect("Unable to write file");
         self.generate_debug_symbols(true);
-        // self.pdb.load_jcomp(&self.pdb_data)?;
+
         Ok(())
     }
 
-    pub fn run(&mut self, source: &str, name: &str, path: &PathBuf) -> Result<bool> {
+    pub fn run(&mut self, source: &str, path: &PathBuf) -> Result<bool> {
         let pairs = JackParser::parse(Rule::class_file, source)?;
 
         let canon = path.canonicalize().unwrap();
         self.file_name = adjust_canonicalization(canon);
+        self.file_number = self.pdb.file_info.len();
+        self.pdb.file_info.push(FileInfo {
+            name: PathBuf::from(&self.file_name),
+            file_type: FileType::Jack,
+        });
 
         for pair in pairs {
             match pair.as_rule() {
@@ -136,7 +128,7 @@ impl Compiler {
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
         let kind_str = pair_iter.next().unwrap().as_str();
-        let _return_str = pair_iter.next().unwrap().as_str();
+        let return_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
         let param_pair = pair_iter.next().unwrap();
         self.current_function_name = name_str.to_string();
@@ -149,14 +141,14 @@ impl Compiler {
             "function" => self.subroutine_kind = SubroutineKind::Function,
             _ => unreachable!(),
         }
-        self.pdb_data.add_func(name_str.to_string());
+        // self.pdb_data.add_func(name_str.to_string());
 
         // methods get 'this' as arg0
 
         if self.subroutine_kind == SubroutineKind::Method {
             self.subroutine_symbols.insert(
                 "this".to_string(),
-                VarType::Instance(name_str.to_string()),
+                VarType::Instance(self.class_name.clone()),
                 VarKind::Argument,
             )?;
         }
@@ -204,8 +196,19 @@ impl Compiler {
                 VarType::Instance(_) => 4,
             };
             let full_name = format!("{}.{}", self.class_name, name);
-            self.pdb_data
-                .add_var(&full_name, storage_class, var_type, 4, symbol.number as i64);
+            let instance = if let VarType::Instance(cl) = &symbol.var_type {
+                cl
+            } else {
+                ""
+            };
+            self.pdb.vars.push(VarSym {
+                name: full_name.clone(),
+                var_type,
+                storage_class,
+                size: 2,
+                address: symbol.number as i64,
+                instance_type: instance.to_string(),
+            });
         }
     }
     fn do_statments(&mut self, pair: Pair<Rule>) {
@@ -213,7 +216,7 @@ impl Compiler {
         for pair in pair_iter {
             self.write(&format!(
                 "// ++pdb {}:{}:{}",
-                self.file_name,
+                self.file_number,
                 pair.line_col().0,
                 pair.line_col().1
             ));

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,20 @@ pub struct Pdb {
     pub funcs: Vec<FuncSym>,
     pub source_lines: Vec<String>,
     pub source_map: Vec<SourceMap>,
+    pub file_info: Vec<FileInfo>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FileInfo {
+    pub name: PathBuf,
+    pub file_type: FileType,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub enum FileType {
+    Jack,
+    Vm,
+    Asm,
+    C,
+    Unknown,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct VarSym {
@@ -17,12 +33,14 @@ pub struct VarSym {
     pub storage_class: i64,
     pub size: i64,
     pub address: i64,
+    pub instance_type: String,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SourceMap {
-    pub file: i64,
-    pub line: String,
-    pub line_no: i64,
+    pub file: usize,
+    pub line_no: usize,
+    pub col_no: usize,
+    pub addr: u16,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FuncSym {
@@ -36,42 +54,33 @@ pub struct CompilerData {
     pub source_lines: Vec<String>,
     // pub source_map: Vec<SourceMap>,
 }
-impl CompilerData {
-    pub fn new() -> Self {
-        Self {
-            module_name: String::new(),
-            source_file: String::new(),
-            vars: Vec::new(),
-            funcs: Vec::new(),
-            source_lines: Vec::new(),
-        }
-    }
-    pub fn add_var(
-        &mut self,
-        name: &String,
-        var_type: i64,
-        storage_class: i64,
-        size: i64,
-        address: i64,
-    ) {
-        self.vars.push(VarSym {
-            name: name.clone(),
-            var_type,
-            storage_class,
-            size,
-            address,
-        });
-    }
-    pub fn add_func(&mut self, name: String) {
-        self.funcs.push(FuncSym { name });
-    }
-    pub fn add_source_line(&mut self, line: String) {
-        self.source_lines.push(line);
-    }
-    pub fn add_source_map(&mut self, line: String) {
-        //self.source_map.push(SourceMap {});
-    }
-}
+// impl CompilerData {
+//     pub fn new() -> Self {
+//         Self {
+//             module_name: String::new(),
+//             source_file: String::new(),
+//             vars: Vec::new(),
+//             funcs: Vec::new(),
+//             source_lines: Vec::new(),
+//         }
+//     }
+//     pub fn add_var(
+//         &mut self,
+//         name: &String,
+//         var_type: i64,
+//         storage_class: i64,
+//         size: i64,
+//         address: i64,
+//     ) {
+//         self.vars.push(VarSym {
+//             name: name.clone(),
+//             var_type,
+//             storage_class,
+//             size,
+//             address,
+//         });
+//     }
+// }
 
 impl Pdb {
     pub fn new() -> Self {
@@ -80,6 +89,7 @@ impl Pdb {
             funcs: Vec::new(),
             source_lines: Vec::new(),
             source_map: Vec::new(),
+            file_info: Vec::new(),
         }
     }
     pub fn load_json(json: &str) -> Result<Self> {

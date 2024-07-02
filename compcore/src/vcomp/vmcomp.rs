@@ -169,12 +169,20 @@ impl VMComp {
         for pair in pairs {
             // insert original source line as comment
             let source_line = pair.as_str();
-            self.write(&format!("// {}", source_line));
+            if pair.as_rule() != Rule::comment {
+                self.write(&format!("// {}", source_line));
+            }
+
             if pair.as_rule() != Rule::pop_st && pair.as_rule() != Rule::add_st {
                 self.last_push = None;
             }
 
             match pair.as_rule() {
+                Rule::comment => {
+                    if source_line.starts_with("// ++pdb ") {
+                        self.write(source_line);
+                    }
+                }
                 Rule::push_st => self.push(pair)?,
                 Rule::pop_st => self.pop(pair, &source_line)?,
                 Rule::add_st => {

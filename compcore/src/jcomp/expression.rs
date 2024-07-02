@@ -5,7 +5,7 @@ use super::{
     symbols::{Symbol, VarKind},
 };
 
-impl Compiler {
+impl Compiler<'_> {
     pub(crate) fn push_symbol(&mut self, symbol: &Symbol) {
         match symbol.var_kind {
             VarKind::Local => {

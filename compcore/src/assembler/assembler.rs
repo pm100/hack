@@ -1,5 +1,6 @@
 use crate::constants;
 use anyhow::{Context, Result};
+use common::pdb::database::{Pdb, SourceMap};
 use pest::{iterators::Pair, Parser};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -13,7 +14,8 @@ pub enum Format {
     Hackem,
     Test,
 }
-pub struct Assembler {
+
+pub struct Assembler<'pdb> {
     labels: HashMap<String, i64>,
     instructions: Vec<u16>,
     forward_references: BTreeMap<String, Vec<isize>>,
@@ -21,10 +23,12 @@ pub struct Assembler {
     halt_addr: u16,
     generated_inst_addr: Option<u16>,
     verbose: bool,
+    source_map: Vec<SourceMap>,
+    pdb: &'pdb mut Pdb,
 }
 
-impl Assembler {
-    pub fn new() -> Assembler {
+impl<'pdb> Assembler<'pdb> {
+    pub fn new(pdb: &'pdb mut Pdb) -> Assembler {
         Self {
             labels: HashMap::new(),
             instructions: Vec::new(),
@@ -33,13 +37,17 @@ impl Assembler {
             halt_addr: 0,
             generated_inst_addr: None,
             verbose: false,
+            source_map: Vec::new(),
+            pdb,
         }
     }
     pub fn run(&mut self, source: &str, _name: &str, verbose: bool) -> Result<()> {
         self.verbose = verbose;
         let parsed = AsmParser::parse(Rule::program, source)?;
         for pair in parsed {
+            //  if pair.as_rule() != Rule::comment {
             self.generated_inst_addr = None;
+            //}
             let line = pair.clone().as_str().trim().trim_matches('\"');
             if verbose {
                 println!("          {}", line);
@@ -48,8 +56,26 @@ impl Assembler {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
                 Rule::l_inst => self.parse_l(pair)?,
-                Rule::comment => (),
-                Rule::EOI => self.complete()?,
+                Rule::comment => {
+                    // ++pdb 0:18:9
+                    if let Some(pdb_line) = line.strip_prefix("// ++pdb ") {
+                        let parts: Vec<&str> = pdb_line.split(':').collect();
+                        if parts.len() == 3
+                        /*&& self.generated_inst_addr.is_some()*/
+                        {
+                            let file = parts[0].parse::<usize>().context("bad file_no")?;
+                            let line_no = parts[1].parse::<usize>().context("bad line_no")?;
+                            let col_no = parts[2].parse::<usize>().context("bad col_no")?;
+                            self.pdb.source_map.push(SourceMap {
+                                file,
+                                line_no,
+                                col_no,
+                                addr: self.instructions.len() as u16,
+                            });
+                        }
+                    }
+                }
+                Rule::EOI => {}
                 _ => {
                     unreachable!()
                 }
@@ -57,7 +83,7 @@ impl Assembler {
             self.lines
                 .push((line.to_string(), self.generated_inst_addr));
         }
-
+        self.complete()?;
         Ok(())
     }
 
@@ -117,7 +143,7 @@ impl Assembler {
                     addr, addr, self.instructions[*addr as usize], line
                 ));
             } else {
-                out.push(format!("{:>22}{}", "", line));
+                out.push(format!("{:>23}{}", "", line));
             }
         }
         out.join("\n")
@@ -195,7 +221,9 @@ impl Assembler {
                 var_count += 1;
             }
         }
-
+        for sm in self.source_map.iter() {
+            println!("{:?}", sm);
+        }
         Ok(())
     }
     fn parse_c(&mut self, pair: Pair<Rule>) -> Result<()> {

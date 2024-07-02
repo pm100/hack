@@ -40,21 +40,21 @@ enum Mode {
     Vm,
     Link,
     Asm,
-    // All,
 }
-
 fn main() -> Result<()> {
     let args = Args::parse();
     let verbose = args.verbose;
     let input_path = &args.input;
+    let mut pdb = Pdb::new();
+
     if let Some(mode) = args.mode {
         let name = input_path.file_stem().unwrap().to_str().unwrap();
         match mode {
             Mode::Jack => {
                 let source = fs::read_to_string(input_path.clone())?;
 
-                let mut compiler = Compiler::new(verbose);
-                if compiler.run(&source, name, &input_path)? {
+                let mut compiler = Compiler::new(verbose, &mut pdb);
+                if compiler.run(&source, &input_path)? {
                     compiler.output_code(&format!("{}.vm", name))?;
                 } else {
                     bail!("No code generated");
@@ -73,13 +73,15 @@ fn main() -> Result<()> {
             Mode::Link => {
                 link_all_vm(verbose, input_path, &args.oslib)?;
             }
-            Mode::Asm => assemble(verbose, input_path, args.format, args.listing)?,
+            Mode::Asm => assemble(verbose, input_path, args.format, args.listing, &mut pdb)?,
         }
     } else {
-        build_all_jack(verbose, input_path)?;
+        build_all_jack(verbose, input_path, &mut pdb)?;
         let linked_vm = link_all_vm(verbose, input_path, &args.oslib)?;
         let compiled_vm = compile_linked_vm(verbose, &linked_vm)?;
-        assemble(verbose, &compiled_vm, args.format, args.listing)?;
+        assemble(verbose, &compiled_vm, args.format, args.listing, &mut pdb)?;
+        let json = pdb.save_json()?;
+        fs::write("test.pdb", json)?;
     };
 
     Ok(())
@@ -145,7 +147,7 @@ fn load_dir(path: &Path, linker: &mut Linker, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn build_all_jack(verbose: bool, input_path: &PathBuf) -> Result<()> {
+fn build_all_jack(verbose: bool, input_path: &PathBuf, pdb: &mut Pdb) -> Result<()> {
     //let name = input_path.file_stem().unwrap().to_str().unwrap();
     //let pdb = Pdb::open(&format!("{}.pdb", name))?;
 
@@ -157,8 +159,8 @@ fn build_all_jack(verbose: bool, input_path: &PathBuf) -> Result<()> {
             if ftype.to_str().unwrap() == "jack" {
                 let source = fs::read_to_string(path.clone())?;
                 let name = path.file_stem().unwrap().to_str().unwrap();
-                let mut compiler = Compiler::new(verbose);
-                if compiler.run(&source, name, &input_path)? {
+                let mut compiler = Compiler::new(verbose, pdb);
+                if compiler.run(&source, &path)? {
                     compiler.output_code(&format!("{}.vm", name))?;
                 } else {
                     bail!("No code generated");
@@ -193,12 +195,13 @@ fn assemble(
     input_path: &PathBuf,
     format: Option<String>,
     listing: Option<PathBuf>,
+    pdb: &mut Pdb,
 ) -> Result<()> {
     //   let args = Args::parse();
     let name = input_path.file_stem().unwrap().to_str().unwrap();
     //  let verbose = args.verbose;
     let output_name = format!("{}.hack", name);
-    let mut assembler = Assembler::new();
+    let mut assembler = Assembler::new(pdb);
     let source = fs::read_to_string(&input_path)?;
     assembler.run(&source, name, verbose)?;
     let fmt = if let Some(fstr) = format {
