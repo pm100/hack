@@ -31,6 +31,12 @@ pub struct VMComp {
     last_push: Option<Push>,
 }
 
+impl Default for VMComp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VMComp {
     pub fn new() -> Self {
         Self {
@@ -184,11 +190,11 @@ impl VMComp {
                     }
                 }
                 Rule::push_st => self.push(pair)?,
-                Rule::pop_st => self.pop(pair, &source_line)?,
+                Rule::pop_st => self.pop(pair, source_line)?,
                 Rule::add_st => {
                     if let Some(ref push) = self.last_push {
                         if push.segment == Rule::constant {
-                            self.fast_add_const(push.index as u16, &source_line)?;
+                            self.fast_add_const(push.index as u16, source_line)?;
                             //self.emit_op("+");
                             //  println!("pushc add @ {}", self.code.len());
                         } else {

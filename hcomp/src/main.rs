@@ -7,9 +7,9 @@ use common::pdb::database::Pdb;
 use clap::Parser;
 use clap_derive::{Parser, ValueEnum};
 use compcore::{
-    assembler::assembler::{Assembler, Format},
+    assembler::assemble::{Assembler, Format},
     jcomp::compiler::Compiler,
-    linker::linker::Linker,
+    linker::link::Linker,
     vcomp::vmcomp::VMComp,
 };
 use std::{
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
                 let source = fs::read_to_string(input_path.clone())?;
 
                 let mut compiler = Compiler::new(verbose, &mut pdb);
-                if compiler.run(&source, &input_path)? {
+                if compiler.run(&source, input_path)? {
                     compiler.output_code(&format!("{}.vm", name))?;
                 } else {
                     bail!("No code generated");
@@ -178,7 +178,7 @@ fn build_all_jack(verbose: bool, input_path: &PathBuf, pdb: &mut Pdb) -> Result<
 
     Ok(())
 }
-fn compile_linked_vm(verbose: bool, input_path: &PathBuf) -> Result<PathBuf> {
+fn compile_linked_vm(_verbose: bool, input_path: &PathBuf) -> Result<PathBuf> {
     let name = input_path
         .file_stem()
         .ok_or(anyhow!("bad path"))?
@@ -209,7 +209,7 @@ fn assemble(
     //  let verbose = args.verbose;
     let output_name = format!("{}.hack", name);
     let mut assembler = Assembler::new(pdb);
-    let source = fs::read_to_string(&input_path)?;
+    let source = fs::read_to_string(input_path)?;
     assembler.run(&source, name, verbose)?;
     let fmt = if let Some(fstr) = format {
         match fstr.as_str() {

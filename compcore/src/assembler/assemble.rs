@@ -191,7 +191,7 @@ impl<'pdb> Assembler<'pdb> {
     }
 
     fn complete(&mut self) -> Result<()> {
-        let mut var_count = 16;
+        let mut var_count = constants::STATIC as i64;
         if self.verbose {
             println!("----Fixup---------");
         }

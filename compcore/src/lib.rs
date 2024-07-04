@@ -1,6 +1,6 @@
 mod constants;
 pub mod assembler {
-    pub mod assembler;
+    pub mod assemble;
 }
 pub mod jcomp {
     pub mod compiler;
@@ -14,5 +14,5 @@ pub mod vcomp {
 }
 
 pub mod linker {
-    pub mod linker;
+    pub mod link;
 }

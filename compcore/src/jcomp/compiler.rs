@@ -1,13 +1,15 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::symbols::{SymbolTable, VarKind, VarType};
 use anyhow::Result;
 use common::{
-    pdb::database::{CompilerData, FileInfo, FileType, Pdb, VarSym},
+    pdb::database::{FileInfo, FileType, Pdb, VarSym},
     utils::adjust_canonicalization,
 };
 use pest::{iterators::Pair, Parser};
-use std::path::Path;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "jcomp/jack.pest"]
@@ -59,7 +61,7 @@ impl<'pdb> Compiler<'pdb> {
         Ok(())
     }
 
-    pub fn run(&mut self, source: &str, path: &PathBuf) -> Result<bool> {
+    pub fn run(&mut self, source: &str, path: &Path) -> Result<bool> {
         let pairs = JackParser::parse(Rule::class_file, source)?;
 
         let canon = path.canonicalize().unwrap();
@@ -128,7 +130,7 @@ impl<'pdb> Compiler<'pdb> {
         let mut pair_iter = pair.into_inner();
         self.subroutine_symbols = SymbolTable::new();
         let kind_str = pair_iter.next().unwrap().as_str();
-        let return_str = pair_iter.next().unwrap().as_str();
+        let _return_str = pair_iter.next().unwrap().as_str();
         let name_str = pair_iter.next().unwrap().as_str();
         let param_pair = pair_iter.next().unwrap();
         self.current_function_name = name_str.to_string();

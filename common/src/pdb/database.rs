@@ -82,6 +82,12 @@ pub struct CompilerData {
 //     }
 // }
 
+impl Default for Pdb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Pdb {
     pub fn new() -> Self {
         Self {
