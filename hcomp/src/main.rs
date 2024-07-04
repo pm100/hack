@@ -33,6 +33,8 @@ struct Args {
     oslib: Option<PathBuf>,
     #[arg(short, long, value_enum)]
     mode: Option<Mode>,
+    #[arg(short, long)]
+    bootstrap: bool,
 }
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum Mode {
@@ -46,6 +48,7 @@ fn main() -> Result<()> {
     let verbose = args.verbose;
     let input_path = &args.input;
     let mut pdb = Pdb::new();
+    let bootstrap = args.bootstrap;
 
     if let Some(mode) = args.mode {
         let name = input_path.file_stem().unwrap().to_str().unwrap();
@@ -65,9 +68,13 @@ fn main() -> Result<()> {
                 let output_name = format!("{}.asm", name);
 
                 let mut vmcompiler = VMComp::new();
-                vmcompiler.bootstrap()?;
+                if bootstrap {
+                    vmcompiler.bootstrap()?
+                };
                 vmcompiler.run(&source, name)?;
-                vmcompiler.emit_firmware()?;
+                if bootstrap {
+                    vmcompiler.emit_firmware()?
+                };
                 vmcompiler.output_code(&output_name)?;
             }
             Mode::Link => {

@@ -19,7 +19,7 @@ enum Comparison {
 #[derive(Clone)]
 struct Push {
     segment: Rule,
-    index: u16,
+    index: i16,
     offset: usize,
 }
 pub struct VMComp {
@@ -252,7 +252,7 @@ impl VMComp {
         let mut pair_iter = pair.into_inner();
         let segment = pair_iter.next().unwrap();
         let index_str = pair_iter.next().unwrap().as_str().trim();
-        let index = index_str.parse::<u16>()?;
+        let index = index_str.parse::<i16>()?;
         self.last_push = Some(Push {
             segment: segment.as_rule(),
             index,
@@ -260,25 +260,25 @@ impl VMComp {
         });
         match segment.as_rule() {
             Rule::local => {
-                self.emit_load_ind_d(constants::LCL, index);
+                self.emit_load_ind_d(constants::LCL, index as u16);
                 self.emit_push(PushSource::D);
             }
             Rule::constant => {
-                self.emit_push(PushSource::Constant(index as i16));
+                self.emit_push(PushSource::Constant(index));
             }
             Rule::argument => {
-                self.emit_load_ind_d(constants::ARG, index);
+                self.emit_load_ind_d(constants::ARG, index as u16);
                 self.emit_push(PushSource::D);
             }
-            Rule::this => self.emit_push_this_that(index, "THIS"),
-            Rule::that => self.emit_push_this_that(index, "THAT"),
+            Rule::this => self.emit_push_this_that(index as u16, "THIS"),
+            Rule::that => self.emit_push_this_that(index as u16, "THAT"),
             Rule::temp => {
-                self.write(&format!("@{}", constants::TEMP + index));
+                self.write(&format!("@{}", constants::TEMP + index as u16));
                 self.write("D=M");
                 self.emit_push(PushSource::D);
             }
             Rule::pointer => {
-                self.write(&format!("@{}", constants::POINTER + index));
+                self.write(&format!("@{}", constants::POINTER + index as u16));
                 self.write("D=M");
                 self.emit_push(PushSource::D);
             }
@@ -379,23 +379,28 @@ impl VMComp {
         // emit code to get value to push into D
         match push.segment {
             Rule::local => {
-                self.emit_load_ind_d(constants::LCL, push.index);
+                self.emit_load_ind_d(constants::LCL, push.index as u16);
             }
             Rule::constant => {
-                self.write(&format!("@{}", push.index));
-                self.write("D=A");
+                if push.index < 0 {
+                    self.write(&format!("@{}", -push.index));
+                    self.write("D=-A");
+                } else {
+                    self.write(&format!("@{}", push.index));
+                    self.write("D=A");
+                }
             }
             Rule::argument => {
-                self.emit_load_ind_d(constants::ARG, push.index);
+                self.emit_load_ind_d(constants::ARG, push.index as u16);
             }
-            Rule::this => self.emit_load_this_that(push.index, "THIS"),
-            Rule::that => self.emit_load_this_that(push.index, "THAT"),
+            Rule::this => self.emit_load_this_that(push.index as u16, "THIS"),
+            Rule::that => self.emit_load_this_that(push.index as u16, "THAT"),
             Rule::temp => {
-                self.write(&format!("@{}", constants::TEMP + push.index));
+                self.write(&format!("@{}", constants::TEMP + push.index as u16));
                 self.write("D=M");
             }
             Rule::pointer => {
-                self.write(&format!("@{}", constants::POINTER + push.index));
+                self.write(&format!("@{}", constants::POINTER + push.index as u16));
                 self.write("D=M");
             }
             Rule::static_seg => {
@@ -555,8 +560,13 @@ impl VMComp {
     fn emit_push(&mut self, from: PushSource) {
         match from {
             PushSource::Constant(val) => {
-                self.write(&format!("@{}", val));
-                self.write("D=A");
+                if val < 0 {
+                    self.write(&format!("@{}", -val));
+                    self.write("D=-A");
+                } else {
+                    self.write(&format!("@{}", val));
+                    self.write("D=A");
+                }
             }
             PushSource::A => {
                 self.write("D=A");
@@ -600,15 +610,17 @@ impl VMComp {
         self.write(&format!("@{}", seg));
         //self.write("A=M");
         self.write("D=M");
-        self.write(&format!("@{}", offset));
-        self.write("D=D+A");
+        if offset != 0 {
+            self.write(&format!("@{}", offset));
+            self.write("D=D+A");
+        }
         // store in R13
         self.write("@R13");
         self.write("M=D");
         // pop to D
         self.write("@SP");
-        self.write("M=M-1");
-        self.write("A=M");
+        self.write("AM=M-1");
+        //self.write("A=M");
         self.write("D=M");
         //store at *R13
         self.write("@R13");
@@ -626,8 +638,10 @@ impl VMComp {
         self.write(&format!("@{}", seg));
         //self.write("A=M");
         self.write("D=M");
-        self.write(&format!("@{}", offset));
-        self.write("D=D+A");
+        if offset != 0 {
+            self.write(&format!("@{}", offset));
+            self.write("D=D+A");
+        }
         // store in R13
         self.write("@R13");
         self.write("M=D");
