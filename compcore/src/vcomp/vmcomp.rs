@@ -1,5 +1,6 @@
 use crate::constants;
 use anyhow::Result;
+use common::pdb::database::{FileType, Pdb, SymbolType};
 use pest::{iterators::Pair, Parser};
 use std::fs;
 #[derive(pest_derive::Parser)]
@@ -22,23 +23,18 @@ struct Push {
     index: i16,
     offset: usize,
 }
-pub struct VMComp {
+pub struct VMComp<'pdb> {
     code: Vec<String>,
     file_name: String,
     label_count: i32,
     current_function: String,
     current_module: String,
     last_push: Option<Push>,
+    pdb: &'pdb mut Pdb,
 }
 
-impl Default for VMComp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl VMComp {
-    pub fn new() -> Self {
+impl<'pdb> VMComp<'pdb> {
+    pub fn new(pdb: &'pdb mut Pdb) -> Self {
         Self {
             code: Vec::new(),
             file_name: String::new(),
@@ -46,6 +42,7 @@ impl VMComp {
             current_function: String::new(),
             current_module: String::new(),
             last_push: None,
+            pdb,
         }
     }
     pub fn output_code(&self, output_name: &str) -> Result<()> {
@@ -237,6 +234,25 @@ impl VMComp {
                     self.current_function = name.to_string();
                     self.current_module =
                         self.current_function.split('.').next().unwrap().to_string();
+                    if self
+                        .pdb
+                        .symbols
+                        .iter()
+                        .find(|x| x.name == *name && x.symbol_type == SymbolType::Func)
+                        .is_none()
+                    {
+                        self.pdb.symbols.push(common::pdb::database::Symbol {
+                            name: name.to_string(),
+                            symbol_type: SymbolType::Func,
+                            func_type: 0,
+                            address: 0,
+                            file_type: FileType::Vm,
+                            var_type: 0,
+                            size: 0,
+                            storage_class: 0,
+                            instance_type: String::new(),
+                        })
+                    }
                     for _ in 0..locals.parse::<u16>()? {
                         self.emit_push(PushSource::Constant(0));
                     }

@@ -207,6 +207,11 @@ impl<'pdb> Assembler<'pdb> {
                     }
                     self.instructions[*index as usize] = *addr as u16;
                 }
+                if let Some(func) = &mut self.pdb.symbols.iter_mut().find(|x| {
+                    x.name == *label && x.symbol_type == common::pdb::database::SymbolType::Func
+                }) {
+                    func.address = *addr as u16;
+                }
             } else {
                 // assume all undefined lables are variables
                 if self.verbose {
@@ -272,6 +277,14 @@ impl<'pdb> Assembler<'pdb> {
         }
         self.labels
             .insert(label.to_string(), self.instructions.len() as i64);
+
+        if let Some(func) =
+            &mut self.pdb.symbols.iter_mut().find(|x| {
+                x.name == label && x.symbol_type == common::pdb::database::SymbolType::Func
+            })
+        {
+            func.address = self.instructions.len() as u16;
+        }
         if label == "Sys.halt" {
             self.halt_addr = self.instructions.len() as u16;
         }

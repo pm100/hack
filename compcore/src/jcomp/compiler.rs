@@ -6,7 +6,7 @@ use std::{
 use super::symbols::{SymbolTable, VarKind, VarType};
 use anyhow::Result;
 use common::{
-    pdb::database::{FileInfo, FileType, Pdb, VarSym},
+    pdb::database::{FileInfo, FileType, Pdb, Symbol},
     utils::adjust_canonicalization,
 };
 use pest::{iterators::Pair, Parser};
@@ -176,6 +176,23 @@ impl<'pdb> Compiler<'pdb> {
             self.subroutine_symbols.dump();
         }
         self.generate_debug_symbols(false);
+        let ftype = match self.subroutine_kind {
+            SubroutineKind::Constructor => 1,
+            SubroutineKind::Method => 2,
+            SubroutineKind::Function => 3,
+            SubroutineKind::None => 0,
+        };
+        self.pdb.symbols.push(common::pdb::database::Symbol {
+            name: format!("{}.{}", self.class_name, name_str.to_string()),
+            symbol_type: common::pdb::database::SymbolType::Func,
+            func_type: ftype,
+            address: 0,
+            file_type: FileType::Jack,
+            var_type: 0,
+            storage_class: 0,
+            size: 0,
+            instance_type: "".to_string(),
+        });
         Ok(())
     }
     fn generate_debug_symbols(&mut self, global: bool) {
@@ -203,12 +220,15 @@ impl<'pdb> Compiler<'pdb> {
             } else {
                 ""
             };
-            self.pdb.vars.push(VarSym {
+            self.pdb.symbols.push(Symbol {
+                symbol_type: common::pdb::database::SymbolType::Var,
                 name: full_name.clone(),
+                func_type: 0,
+                file_type: FileType::Jack,
                 var_type,
                 storage_class,
                 size: 2,
-                address: symbol.number as i64,
+                address: symbol.number as u16,
                 instance_type: instance.to_string(),
             });
         }

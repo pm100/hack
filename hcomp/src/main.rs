@@ -67,7 +67,7 @@ fn main() -> Result<()> {
                 let source = fs::read_to_string(input_path)?;
                 let output_name = format!("{}.asm", name);
 
-                let mut vmcompiler = VMComp::new();
+                let mut vmcompiler = VMComp::new(&mut pdb);
                 if bootstrap {
                     vmcompiler.bootstrap()?
                 };
@@ -78,39 +78,57 @@ fn main() -> Result<()> {
                 vmcompiler.output_code(&output_name)?;
             }
             Mode::Link => {
-                link_all_vm(verbose, input_path, &args.oslib)?;
+                link_all_vm(verbose, input_path, &args.oslib, name)?;
             }
             Mode::Asm => assemble(verbose, input_path, args.format, args.listing, &mut pdb)?,
         }
     } else {
+        let dir = if input_path == Path::new(".") {
+            std::env::current_dir()?
+        } else {
+            input_path.clone()
+        };
+
+        let name = dir
+            .components()
+            .last()
+            .unwrap()
+            .as_os_str()
+            .to_str()
+            .unwrap();
         build_all_jack(verbose, input_path, &mut pdb)?;
-        let linked_vm = link_all_vm(verbose, input_path, &args.oslib)?;
-        let compiled_vm = compile_linked_vm(verbose, &linked_vm)?;
+        let linked_vm = link_all_vm(verbose, input_path, &args.oslib, name)?;
+        let compiled_vm = compile_linked_vm(verbose, &linked_vm, &mut pdb)?;
         assemble(verbose, &compiled_vm, args.format, args.listing, &mut pdb)?;
         let json = pdb.save_json()?;
-        fs::write("test.pdb", json)?;
+        fs::write(format!("{}.pdb", name), json)?;
     };
 
     Ok(())
 }
-fn link_all_vm(verbose: bool, input_path: &PathBuf, oslib: &Option<PathBuf>) -> Result<PathBuf> {
+fn link_all_vm(
+    verbose: bool,
+    input_path: &PathBuf,
+    oslib: &Option<PathBuf>,
+    name: &str,
+) -> Result<PathBuf> {
     // the input points at a directory
     if input_path.is_file() {
         bail!("Input must be a directory");
     }
-    let dir = if input_path == Path::new(".") {
-        std::env::current_dir()?
-    } else {
-        input_path.clone()
-    };
+    // let dir = if input_path == Path::new(".") {
+    //     std::env::current_dir()?
+    // } else {
+    //     input_path.clone()
+    // };
 
-    let name = dir
-        .components()
-        .last()
-        .unwrap()
-        .as_os_str()
-        .to_str()
-        .unwrap();
+    // let name = dir
+    //     .components()
+    //     .last()
+    //     .unwrap()
+    //     .as_os_str()
+    //     .to_str()
+    //     .unwrap();
     // the generated file name is <dir>.vm by default
 
     let output_name = format!("{}.vm", name);
@@ -162,15 +180,16 @@ fn build_all_jack(verbose: bool, input_path: &PathBuf, pdb: &mut Pdb) -> Result<
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
-            let ftype = path.extension().unwrap();
-            if ftype.to_str().unwrap() == "jack" {
-                let source = fs::read_to_string(path.clone())?;
-                let name = path.file_stem().unwrap().to_str().unwrap();
-                let mut compiler = Compiler::new(verbose, pdb);
-                if compiler.run(&source, &path)? {
-                    compiler.output_code(&format!("{}.vm", name))?;
-                } else {
-                    bail!("No code generated");
+            if let Some(ftype) = path.extension() {
+                if ftype.to_str().unwrap() == "jack" {
+                    let source = fs::read_to_string(path.clone())?;
+                    let name = path.file_stem().unwrap().to_str().unwrap();
+                    let mut compiler = Compiler::new(verbose, pdb);
+                    if compiler.run(&source, &path)? {
+                        compiler.output_code(&format!("{}.vm", name))?;
+                    } else {
+                        bail!("No code generated");
+                    }
                 }
             }
         }
@@ -178,7 +197,7 @@ fn build_all_jack(verbose: bool, input_path: &PathBuf, pdb: &mut Pdb) -> Result<
 
     Ok(())
 }
-fn compile_linked_vm(_verbose: bool, input_path: &PathBuf) -> Result<PathBuf> {
+fn compile_linked_vm(_verbose: bool, input_path: &PathBuf, pdb: &mut Pdb) -> Result<PathBuf> {
     let name = input_path
         .file_stem()
         .ok_or(anyhow!("bad path"))?
@@ -187,7 +206,7 @@ fn compile_linked_vm(_verbose: bool, input_path: &PathBuf) -> Result<PathBuf> {
 
     let output_name = format!("{}.asm", name);
 
-    let mut vmcompiler = VMComp::new();
+    let mut vmcompiler = VMComp::new(pdb);
 
     let source = fs::read_to_string(input_path)?;
     vmcompiler.bootstrap()?;
@@ -207,21 +226,22 @@ fn assemble(
     //   let args = Args::parse();
     let name = input_path.file_stem().unwrap().to_str().unwrap();
     //  let verbose = args.verbose;
-    let output_name = format!("{}.hack", name);
+
     let mut assembler = Assembler::new(pdb);
     let source = fs::read_to_string(input_path)?;
     assembler.run(&source, name, verbose)?;
-    let fmt = if let Some(fstr) = format {
+    let (fmt, suffix) = if let Some(fstr) = format {
         match fstr.as_str() {
-            "binary" | "b" => Format::RawBinary,
-            "hex" | "h" => Format::RawHex,
-            "hx" => Format::Hackem,
-            "test" => Format::Test,
+            "binary" | "b" => (Format::RawBinary, "hack"),
+            "hex" | "h" => (Format::RawHex, "hex"),
+            "hx" => (Format::Hackem, "hx"),
+            "test" => (Format::Test, "test"),
             _ => bail!("Invalid format"),
         }
     } else {
-        Format::RawBinary
+        (Format::RawBinary, "hack")
     };
+    let output_name = format!("{}.{}", name, suffix);
     let listing_str = assembler.listing();
     assembler.output_code(&output_name, fmt)?;
     if let Some(listing_path) = listing {
