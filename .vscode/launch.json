@@ -8,15 +8,15 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/linker.exe",
+            "program": "${workspaceFolder}/target/debug/hcomp.exe",
             "args": [
                 "-i",
                 ".",
-                "--lib",
+                "--oslib",
                 "C:\\work\\hack\\os\\"
             ],
             "stopAtEntry": false,
-            "cwd": "c:\\work\\hackem\\math_test",
+            "cwd": "C:\\work\\nand2tetris\\projects\\11\\pong",
             "environment": [],
             "console": "externalTerminal"
         }

@@ -265,36 +265,45 @@ impl<'pdb> Compiler<'pdb> {
         for pair in pair_iter {
             self.do_sub_var(pair, VarKind::Local)?;
         }
-
+        self.write(&format!(
+            "// ++pdb {}:{}:{}",
+            self.file_number,
+            p.line_col().0,
+            p.line_col().1
+        ));
         let local_count = self.subroutine_symbols.get_count(VarKind::Local);
         self.write(&format!(
             "function {}.{} {}",
             self.class_name, name, local_count
         ));
+
         match self.subroutine_kind {
             SubroutineKind::Constructor => {
                 let field_count = self.global_symbols.get_count(VarKind::Field);
-                self.write(&format!(
-                    "// ++pdb {}:{}:{}",
-                    self.file_name,
-                    p.line_col().0,
-                    p.line_col().1
-                ));
+
                 self.write(&format!("push constant {}", field_count));
                 self.write("call Memory.alloc 1");
                 self.write("pop pointer 0");
             }
             SubroutineKind::Method => {
-                self.write(&format!(
-                    "// ++pdb {}:{}:{}",
-                    self.file_name,
-                    p.line_col().0,
-                    p.line_col().1
-                ));
+                // self.write(&format!(
+                //     "// ++pdb {}:{}:{}",
+                //     self.file_name,
+                //     p.line_col().0,
+                //     p.line_col().1
+                // ));
                 self.write("push argument 0");
                 self.write("pop pointer 0");
             }
-            _ => {}
+            SubroutineKind::Function => {
+                // self.write(&format!(
+                //     "// ++pdb {}:{}:{}",
+                //     self.file_name,
+                //     p.line_col().0,
+                //     p.line_col().1
+                // ));
+            }
+            _ => unreachable!(),
         };
         Ok(())
     }

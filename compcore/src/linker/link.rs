@@ -29,6 +29,7 @@ impl Linker {
         // incoming file is chopped up into chunks , each chunk is a function
         // for each chunk we record what functions it calls
         let lines = source.lines();
+        let mut pdb_comment = String::new();
         let mut current_function_name = String::new();
         for line in lines {
             let mut parts = line.split_whitespace();
@@ -41,11 +42,15 @@ impl Linker {
                         };
                         // start new chunk
                         current_function_name = func_name.clone();
-                        let new_chunk = Chunk {
+                        let mut new_chunk = Chunk {
                             name: func_name.to_string(),
                             code: vec![],
                             calls: vec![],
                         };
+                        if pdb_comment.len() > 0 {
+                            new_chunk.code.push(pdb_comment.clone());
+                            pdb_comment.clear();
+                        }
 
                         if self.chunks.insert(func_name.clone(), new_chunk).is_some() {
                             bail!("duplicate function {}", func_name);
@@ -71,7 +76,11 @@ impl Linker {
             if let Some(ref mut chunk) = self.chunks.get_mut(&current_function_name) {
                 chunk.code.push(line.to_string());
             } else {
-                bail!("line outside of function");
+                if line.starts_with("// ++pdb") {
+                    pdb_comment = line.to_string();
+                } else {
+                    bail!("line outside of function");
+                }
             }
         }
 

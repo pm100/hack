@@ -1,10 +1,9 @@
-program = _{ SOI ~ stmt* ~ EOI }
-
-stmt = _{ a_inst | c_inst | l_inst | comment | ("\n" | "\r\n") }
-
-label = @{ (ASCII_ALPHA) ~ (ASCII_ALPHA | ASCII_DIGIT | "." | "_" | "$")* }
-dest  =  { "AMD" | "MD" | "AM" | "AD" | "A" | "M" | "D" }
-comp  =  {
+program = _{ SOI ~ line* ~ EOI }
+line    = _{ stmt ~ NEWLINE? }
+stmt    = _{ a_inst | c_inst | l_inst | directive | d_inst | comment }
+label   = @{ (ASCII_ALPHA) ~ (ASCII_ALPHA | ASCII_DIGIT | "." | "_" | "$")* }
+dest    =  { "AMD" | "MD" | "AM" | "AD" | "A" | "M" | "D" }
+comp    =  {
     "0"
   | "1"
   | "-1"
@@ -34,13 +33,19 @@ comp  =  {
   | "!M"
   | "-M"
 }
-jump  =  { "JGT" | "JEQ" | "JGE" | "JLT" | "JNE" | "JLE" | "JMP" }
+jump    =  { "JGT" | "JEQ" | "JGE" | "JLT" | "JNE" | "JLE" | "JMP" }
 
-a_inst     =  { "@" ~ (hex_num | int | label) }
-c_inst     =  { (dest ~ "=")? ~ comp ~ (";" ~ jump)? }
-l_inst     =  { "(" ~ label ~ ")" }
-comment    =  { "//" ~ (!"\n" ~ ANY)* }
-int        =  { ("+" | "-")? ~ ASCII_DIGIT+ }
-hex        =  { '0'..'9' | 'a'..'f' | 'A'..'F' }
-hex_num    =  { "0X" | "0x" ~ hex+ }
-WHITESPACE = _{ " " | "\t" }
+a_inst    =  { "@" ~ (hex_num | int | label) }
+c_inst    =  { (dest ~ "=")? ~ comp ~ (";" ~ jump)? }
+l_inst    =  { "(" ~ label ~ ")" }
+d_inst    =  { word_inst }
+word_inst =  { word ~ (hex_num | int) }
+word      = _{ ^"word" }
+comment   =  { "//" ~ (!"\n" ~ ANY)* }
+directive =  { dot_org }
+dot_org   =  { ".org" ~ (hex_num | int) }
+
+hex_num    = @{ ("0X" | "0x") ~ hex+ }
+hex        = @{ '0'..'9' | 'a'..'f' | 'A'..'F' }
+int        = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
+WHITESPACE = _{ " " | "\t" | NEWLINE }

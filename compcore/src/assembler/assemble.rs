@@ -25,6 +25,8 @@ pub struct Assembler<'pdb> {
     verbose: bool,
     source_map: Vec<SourceMap>,
     pdb: &'pdb mut Pdb,
+    current_data_address: u16,
+    data: Vec<(u16, u16)>,
 }
 
 impl<'pdb> Assembler<'pdb> {
@@ -39,6 +41,8 @@ impl<'pdb> Assembler<'pdb> {
             verbose: false,
             source_map: Vec::new(),
             pdb,
+            current_data_address: 0,
+            data: Vec::new(),
         }
     }
     pub fn run(&mut self, source: &str, _name: &str, verbose: bool) -> Result<()> {
@@ -56,6 +60,8 @@ impl<'pdb> Assembler<'pdb> {
                 Rule::a_inst => self.parse_a(pair)?,
                 Rule::c_inst => self.parse_c(pair)?,
                 Rule::l_inst => self.parse_l(pair)?,
+                Rule::directive => self.parse_directive(pair)?,
+                Rule::d_inst => self.parse_d(pair)?,
                 Rule::comment => {
                     // ++pdb 0:18:9
                     if let Some(pdb_line) = line.strip_prefix("// ++pdb ") {
@@ -77,6 +83,7 @@ impl<'pdb> Assembler<'pdb> {
                 }
                 Rule::EOI => {}
                 _ => {
+                    println!("unhandled rule {:?}", pair);
                     unreachable!()
                 }
             }
@@ -116,6 +123,14 @@ impl<'pdb> Assembler<'pdb> {
                 for line in self.instructions.iter() {
                     writeln!(ofile, "{:04x}", line)?;
                 }
+                let mut last_addr = 0;
+                for (data, addr) in self.data.iter() {
+                    if *addr != last_addr + 1 {
+                        writeln!(ofile, "RAM@{:04x}", addr)?;
+                    }
+                    last_addr = *addr;
+                    writeln!(ofile, "{:04x}", data)?;
+                }
             }
             Format::Test => {
                 for (off, line) in self.instructions.iter().enumerate() {
@@ -148,7 +163,10 @@ impl<'pdb> Assembler<'pdb> {
         }
         out.join("\n")
     }
-
+    fn gen_data(&mut self, data: u16) {
+        self.data.push((data, self.current_data_address));
+        self.current_data_address += 1;
+    }
     fn gen_inst(&mut self, inst: u16) {
         self.instructions.push(inst);
         self.generated_inst_addr = Some(self.instructions.len() as u16 - 1);
@@ -189,7 +207,54 @@ impl<'pdb> Assembler<'pdb> {
         }
         Ok(())
     }
+    fn parse_directive(&mut self, pair: Pair<Rule>) -> Result<()> {
+        let this_pair = pair.into_inner().next().unwrap();
+        match this_pair.as_rule() {
+            Rule::dot_org => self.parse_dot_org(this_pair)?,
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
 
+    fn parse_maybe_hex(numstr: &str) -> Option<u16> {
+        if numstr.starts_with("0x") | numstr.starts_with("0X") {
+            if let Ok(num) = u16::from_str_radix(&numstr[2..], 16) {
+                return Some(num);
+            }
+        } else if let Ok(num) = numstr.parse::<u16>() {
+            return Some(num);
+        }
+        None
+    }
+
+    fn parse_dot_org(&mut self, pair: Pair<Rule>) -> Result<()> {
+        let this_pair = pair.into_inner().next().unwrap();
+        println!("directive {:?}", this_pair);
+        let addr_str = this_pair.as_str();
+        let addr = Self::parse_maybe_hex(addr_str).unwrap();
+        self.current_data_address = addr;
+        Ok(())
+    }
+
+    fn parse_d(&mut self, pair: Pair<Rule>) -> Result<()> {
+        let this_pair = pair.into_inner().next().unwrap();
+        match this_pair.as_rule() {
+            Rule::word_inst => self.parse_word(this_pair)?,
+            _ => {
+                println!("unreachable! {:?}", this_pair);
+            }
+        }
+        Ok(())
+    }
+    fn parse_word(&mut self, pair: Pair<Rule>) -> Result<()> {
+        //   println!("data {:?}", pair);
+        let pair = pair.into_inner().next().unwrap();
+
+        let num_str = pair.as_str();
+        let num = Self::parse_maybe_hex(num_str).unwrap();
+        self.gen_data(num);
+        Ok(())
+    }
     fn complete(&mut self) -> Result<()> {
         let mut var_count = constants::STATIC as i64;
         if self.verbose {
